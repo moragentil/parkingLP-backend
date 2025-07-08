@@ -34,6 +34,7 @@ class AlarmaController extends Controller
             'estacionamiento_id' => 'required|integer|exists:estacionamientos,id',
             'hora_alarma' => 'required|date|after:now',
             'mensaje' => 'nullable|string|max:500',
+            'tipo' => 'nullable|in:vencimiento,recordatorio,multa'
         ]);
 
         if ($validator->fails()) {
@@ -65,7 +66,8 @@ class AlarmaController extends Controller
         $validator = Validator::make($request->all(), [
             'hora_alarma' => 'sometimes|required|date|after:now',
             'mensaje' => 'nullable|string|max:500',
-            'activa' => 'boolean'
+            'activa' => 'boolean',
+            'tipo' => 'nullable|in:vencimiento,recordatorio,multa'
         ]);
 
         if ($validator->fails()) {

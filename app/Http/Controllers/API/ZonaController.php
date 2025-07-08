@@ -39,6 +39,8 @@ class ZonaController extends Controller
             'poligono_coordenadas.*.lng' => 'required_with:poligono_coordenadas|numeric|between:-180,180',
             'hora_inicio' => 'nullable|date_format:H:i:s',
             'hora_fin' => 'nullable|date_format:H:i:s',
+            'dias_habilitados' => 'nullable|array',
+            'dias_habilitados.*' => 'string|in:lunes,martes,miercoles,jueves,viernes,sabado,domingo',
             'tarifa_por_hora' => 'nullable|numeric|min:0',
             'es_prohibido_estacionar' => 'boolean',
             'activa' => 'boolean'
@@ -79,6 +81,8 @@ class ZonaController extends Controller
             'poligono_coordenadas.*.lng' => 'required_with:poligono_coordenadas|numeric|between:-180,180',
             'hora_inicio' => 'nullable|date_format:H:i:s',
             'hora_fin' => 'nullable|date_format:H:i:s',
+            'dias_habilitados' => 'nullable|array',
+            'dias_habilitados.*' => 'string|in:lunes,martes,miercoles,jueves,viernes,sabado,domingo',
             'tarifa_por_hora' => 'nullable|numeric|min:0',
             'es_prohibido_estacionar' => 'boolean',
             'activa' => 'boolean'

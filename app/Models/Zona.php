@@ -18,7 +18,7 @@ class Zona extends Model
         'hora_fin',
         'dias_habilitados', // (ej. ["lunes", "martes", "miércoles"])
         'tarifa_por_hora',
-        'color mapa',
+        'color_mapa',
         'es_prohibido_estacionar', // Indica si es una zona de prohibición
         'activa',
         'descripcion'

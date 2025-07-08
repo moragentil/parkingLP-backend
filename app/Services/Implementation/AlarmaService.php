@@ -50,10 +50,8 @@ class AlarmaService implements AlarmaServiceInterface
     {
         DB::beginTransaction();
         try {
-            // Verificar que el estacionamiento existe
             $estacionamiento = Estacionamiento::findOrFail($estacionamientoId);
             
-            // Verificar que el estacionamiento esté activo
             if ($estacionamiento->estado !== 'activo') {
                 return [
                     'status' => false,
@@ -62,7 +60,6 @@ class AlarmaService implements AlarmaServiceInterface
                 ];
             }
 
-            // Verificar que no tenga ya una alarma activa
             $alarmaExistente = Alarma::where('estacionamiento_id', $estacionamientoId)
                 ->where('activa', true)
                 ->first();
@@ -75,12 +72,10 @@ class AlarmaService implements AlarmaServiceInterface
                 ];
             }
 
-            // Parsear hora de la alarma
             $horaAlarma = isset($datos['hora_alarma']) 
                 ? Carbon::parse($datos['hora_alarma'])
-                : now()->addMinutes(30); // Default: 30 minutos
+                : now()->addMinutes(30);
 
-            // Verificar que la hora de alarma sea futura
             if ($horaAlarma->isPast()) {
                 return [
                     'status' => false,
@@ -89,16 +84,17 @@ class AlarmaService implements AlarmaServiceInterface
                 ];
             }
 
-            // Crear la alarma
+            // Crear la alarma usando los campos correctos del modelo
             $alarma = Alarma::create([
                 'estacionamiento_id' => $estacionamientoId,
+                'fecha_alarma' => $horaAlarma->toDateString(),
                 'hora_alarma' => $horaAlarma,
                 'mensaje' => $datos['mensaje'] ?? $this->generarMensajeDefault($estacionamiento),
                 'activa' => true,
-                'enviada' => false
+                'enviada' => false,
+                'tipo' => $datos['tipo'] ?? 'vencimiento'
             ]);
 
-            // Marcar el estacionamiento como que tiene alarma programada
             $estacionamiento->update(['alarma_programada' => true]);
 
             DB::commit();
@@ -163,7 +159,6 @@ class AlarmaService implements AlarmaServiceInterface
         try {
             $alarma = Alarma::findOrFail($alarmaId);
             
-            // Verificar que la alarma esté activa
             if (!$alarma->activa) {
                 return [
                     'status' => false,
@@ -172,13 +167,11 @@ class AlarmaService implements AlarmaServiceInterface
                 ];
             }
 
-            // Preparar datos de actualización
             $datosActualizacion = [];
             
             if (isset($datos['hora_alarma'])) {
                 $nuevaHora = Carbon::parse($datos['hora_alarma']);
                 
-                // Verificar que la nueva hora sea futura
                 if ($nuevaHora->isPast()) {
                     return [
                         'status' => false,
@@ -187,6 +180,7 @@ class AlarmaService implements AlarmaServiceInterface
                     ];
                 }
                 
+                $datosActualizacion['fecha_alarma'] = $nuevaHora->toDateString();
                 $datosActualizacion['hora_alarma'] = $nuevaHora;
             }
             
@@ -196,6 +190,10 @@ class AlarmaService implements AlarmaServiceInterface
             
             if (isset($datos['activa'])) {
                 $datosActualizacion['activa'] = $datos['activa'];
+            }
+
+            if (isset($datos['tipo'])) {
+                $datosActualizacion['tipo'] = $datos['tipo'];
             }
 
             $alarma->update($datosActualizacion);
@@ -232,10 +230,7 @@ class AlarmaService implements AlarmaServiceInterface
         try {
             $alarma = Alarma::findOrFail($alarmaId);
             
-            // Actualizar el estacionamiento
             $alarma->estacionamiento->update(['alarma_programada' => false]);
-            
-            // Eliminar la alarma
             $alarma->delete();
 
             DB::commit();
@@ -268,10 +263,7 @@ class AlarmaService implements AlarmaServiceInterface
         try {
             $alarma = Alarma::findOrFail($alarmaId);
             
-            $alarma->update([
-                'enviada' => true,
-                'fecha_envio' => now()
-            ]);
+            $alarma->update(['enviada' => true]);
             
             return [
                 'status' => true,
@@ -354,8 +346,6 @@ class AlarmaService implements AlarmaServiceInterface
             $alarma = Alarma::findOrFail($alarmaId);
             
             $alarma->update(['activa' => false]);
-            
-            // Actualizar el estacionamiento
             $alarma->estacionamiento->update(['alarma_programada' => false]);
 
             DB::commit();
@@ -384,9 +374,6 @@ class AlarmaService implements AlarmaServiceInterface
         }
     }
 
-    /**
-     * Generar mensaje por defecto para la alarma
-     */
     private function generarMensajeDefault($estacionamiento)
     {
         $zonaNombre = $estacionamiento->zona ? $estacionamiento->zona->nombre : 'la zona';

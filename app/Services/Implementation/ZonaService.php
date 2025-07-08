@@ -112,9 +112,10 @@ class ZonaService implements ZonaServiceInterface
                 'nombre' => $datos['nombre'],
                 'descripcion' => $datos['descripcion'] ?? null,
                 'color_mapa' => $datos['color_mapa'] ?? '#FF0000',
-                'poligono_coordenadas' => $datos['poligono_coordenadas'] ?? null,
+                'poligono_coordenadas' => $datos['poligono_coordenadas'] ?? [],
                 'hora_inicio' => $datos['hora_inicio'] ?? '08:00:00',
                 'hora_fin' => $datos['hora_fin'] ?? '20:00:00',
+                'dias_habilitados' => $datos['dias_habilitados'] ?? ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'],
                 'tarifa_por_hora' => $datos['tarifa_por_hora'] ?? 0,
                 'es_prohibido_estacionar' => $datos['es_prohibido_estacionar'] ?? false,
                 'activa' => $datos['activa'] ?? true
@@ -176,7 +177,7 @@ class ZonaService implements ZonaServiceInterface
             
             $camposPermitidos = [
                 'nombre', 'descripcion', 'color_mapa', 'poligono_coordenadas',
-                'hora_inicio', 'hora_fin', 'tarifa_por_hora', 
+                'hora_inicio', 'hora_fin', 'dias_habilitados', 'tarifa_por_hora', 
                 'es_prohibido_estacionar', 'activa'
             ];
             
@@ -346,9 +347,6 @@ class ZonaService implements ZonaServiceInterface
         }
     }
 
-    /**
-     * Validar que el polígono tenga la estructura correcta
-     */
     private function validarPoligono($poligono)
     {
         if (!is_array($poligono) || empty($poligono)) {
@@ -373,19 +371,15 @@ class ZonaService implements ZonaServiceInterface
             }
         }
         
-        return count($poligono) >= 3; // Mínimo 3 puntos para formar un polígono
+        return count($poligono) >= 3;
     }
 
-    /**
-     * Algoritmo básico para verificar si un punto está dentro de un polígono
-     */
     private function puntoEnPoligono($lat, $lng, $poligono)
     {
         if (empty($poligono) || !is_array($poligono)) {
             return false;
         }
         
-        // Implementación básica del algoritmo ray casting
         $vertices = count($poligono);
         $dentro = false;
         
@@ -404,21 +398,16 @@ class ZonaService implements ZonaServiceInterface
         return $dentro;
     }
 
-    /**
-     * Verificar si una zona está en el rango especificado
-     */
     private function zonaEstaEnRango($lat, $lng, $zona, $radio)
     {
         if (empty($zona->poligono_coordenadas)) {
             return false;
         }
         
-        // Verificar si el punto está dentro del polígono
         if ($this->puntoEnPoligono($lat, $lng, $zona->poligono_coordenadas)) {
             return true;
         }
         
-        // Verificar distancia al centroide del polígono
         $centroide = $this->calcularCentroide($zona->poligono_coordenadas);
         if ($centroide) {
             $distancia = sqrt(
@@ -432,9 +421,6 @@ class ZonaService implements ZonaServiceInterface
         return false;
     }
 
-    /**
-     * Calcular el centroide de un polígono
-     */
     private function calcularCentroide($poligono)
     {
         if (empty($poligono)) {
