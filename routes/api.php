@@ -5,6 +5,7 @@ use App\Http\Controllers\API\VehiculoController;
 use App\Http\Controllers\API\EstacionamientoController;
 use App\Http\Controllers\API\ZonaController;
 use App\Http\Controllers\API\AlarmaController;
+use App\Http\Controllers\API\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
 // Rutas de autenticación
@@ -16,6 +17,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    
+    // Usuarios
+    Route::apiResource('usuarios', UsuarioController::class);
+    Route::post('/usuarios/{id}/cambiar-password', [UsuarioController::class, 'cambiarPassword']);
+    Route::get('/usuarios/buscar', [UsuarioController::class, 'buscar']);
     
     // Vehículos
     Route::apiResource('vehiculos', VehiculoController::class);
