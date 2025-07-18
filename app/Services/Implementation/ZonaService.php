@@ -387,13 +387,12 @@ class ZonaService implements ZonaServiceInterface
                         return [
                             'id' => $tarifa->id,
                             'nombre' => $tarifa->nombre,
-                            'hora_inicio' => $tarifa->hora_inicio ? $tarifa->hora_inicio->format('H:i') : '00:00',
-                            'hora_fin' => $tarifa->hora_fin ? $tarifa->hora_fin->format('H:i') : '23:59',
+                            'hora_inicio' => $tarifa->hora_inicio ? $tarifa->hora_inicio : '00:00',
+                            'hora_fin' => $tarifa->hora_fin ? $tarifa->hora_fin : '23:59',
                             'precio_por_hora' => (float) $tarifa->precio_por_hora,
                             'descripcion' => $tarifa->descripcion
                         ];
                     } catch (\Exception $e) {
-                        // Si hay error al formatear una tarifa, usar valores por defecto
                         return [
                             'id' => $tarifa->id,
                             'nombre' => $tarifa->nombre ?? 'Tarifa',
@@ -405,48 +404,51 @@ class ZonaService implements ZonaServiceInterface
                     }
                 });
         } catch (\Exception $e) {
-            // Si hay error con las tarifas, usar array vacío
             $tarifasDisponibles = collect([]);
         }
 
         // Formatear horarios por día con manejo de errores
         try {
-            $horariosPorDia = $zona->horarios->groupBy('dia_semana')->map(function ($horarios, $dia) {
-                return $horarios->map(function ($horario) {
+            $horariosPorDia = collect([]);
+        
+            if ($zona->horarios && $zona->horarios->isNotEmpty()) {
+                $horariosPorDia = $zona->horarios->groupBy('dia_semana')->map(function ($horarios, $dia) {
+                    // Tomar el primer horario del día
+                    $horario = $horarios->first();
+                
                     try {
                         return [
                             'id' => $horario->id,
-                            'hora_inicio' => $horario->hora_inicio ? $horario->hora_inicio->format('H:i') : '00:00',
-                            'hora_fin' => $horario->hora_fin ? $horario->hora_fin->format('H:i') : '23:59',
+                            'hora_inicio' => $horario->hora_inicio ?? '00:00:00',
+                            'hora_fin' => $horario->hora_fin ?? '23:59:59',
                             'activo' => $horario->activo ?? true
                         ];
                     } catch (\Exception $e) {
-                        // Si hay error al formatear un horario, usar valores por defecto
                         return [
-                            'id' => $horario->id,
-                            'hora_inicio' => '00:00',
-                            'hora_fin' => '23:59',
+                            'id' => $horario->id ?? null,
+                            'hora_inicio' => '00:00:00',
+                            'hora_fin' => '23:59:59',
                             'activo' => true
                         ];
                     }
-                })->first(); // Asumiendo un horario por día
-            });
+                });
+            }
         } catch (\Exception $e) {
             $horariosPorDia = collect([]);
         }
 
         // Determinar tipo de zona
-        $tipo = 'libre'; // Por defecto
+        $tipo = 'libre';
         if ($zona->es_prohibido_estacionar) {
             $tipo = 'prohibida';
-        } elseif ($zona->horarios->isNotEmpty() && !$zona->es_prohibido_estacionar) {
-            $tipo = 'paga'; // Si tiene horarios y no es prohibida, es de pago
+        } elseif ($zona->horarios && $zona->horarios->isNotEmpty() && !$zona->es_prohibido_estacionar) {
+            $tipo = 'paga';
         }
 
-        // Calcular tarifa actual (basada en la hora actual) con manejo de errores
+        // Calcular tarifa actual
         $horaActual = now()->format('H:i:s');
         $tarifaActual = null;
-        if ($tipo === 'paga') {
+        if ($tipo === 'paga' && $tarifasDisponibles->isNotEmpty()) {
             try {
                 $tarifa = TarifaHorario::obtenerTarifaPorHora($horaActual);
                 if ($tarifa) {
@@ -457,7 +459,6 @@ class ZonaService implements ZonaServiceInterface
                     ];
                 }
             } catch (\Exception $e) {
-                // Si hay error al obtener tarifa, usar null
                 $tarifaActual = null;
             }
         }
@@ -628,7 +629,7 @@ class ZonaService implements ZonaServiceInterface
         $zonas = $this->obtenerZonasActivas();
         
         if (!$zonas['status']) {
-            return $zonas; // Retornar directamente el array, no response()->json()
+            return $zonas;
         }
         
         // Formatear datos específicamente para la leyenda del mapa
@@ -652,6 +653,9 @@ class ZonaService implements ZonaServiceInterface
         ];
         
     } catch (\Exception $e) {
+        \Log::error('Error en obtenerLeyendaZonas: ' . $e->getMessage());
+        \Log::error('Stack trace: ' . $e->getTraceAsString());
+        
         return [
             'status' => false,
             'message' => 'Error al obtener leyenda de zonas',
@@ -680,19 +684,18 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
     
     foreach ($diasSemana as $dia) {
         if (isset($horariosPorDia[$dia]) && !empty($horariosPorDia[$dia])) {
-            // Tomar el primer horario del día (asumiendo uno por día)
-            $horario = is_array($horariosPorDia[$dia]) ? $horariosPorDia[$dia][0] : $horariosPorDia[$dia];
+            $horario = $horariosPorDia[$dia];
             
             try {
-                $horaInicio = isset($horario['hora_inicio']) ? $horario['hora_inicio'] : '00:00';
-                $horaFin = isset($horario['hora_fin']) ? $horario['hora_fin'] : '23:59';
+                $horaInicio = isset($horario['hora_inicio']) ? $horario['hora_inicio'] : '00:00:00';
+                $horaFin = isset($horario['hora_fin']) ? $horario['hora_fin'] : '23:59:59';
                 
-                // Si son objetos Carbon, formatearlos
-                if (is_object($horaInicio)) {
-                    $horaInicio = $horaInicio->format('H:i');
+                // Limpiar formato si viene con segundos
+                if (is_string($horaInicio) && strlen($horaInicio) > 5) {
+                    $horaInicio = substr($horaInicio, 0, 5);
                 }
-                if (is_object($horaFin)) {
-                    $horaFin = $horaFin->format('H:i');
+                if (is_string($horaFin) && strlen($horaFin) > 5) {
+                    $horaFin = substr($horaFin, 0, 5);
                 }
                 
                 $lunesViernes[] = $horaInicio . ' - ' . $horaFin;
@@ -713,16 +716,17 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
     
     // Sábados
     if (isset($horariosPorDia['sabado']) && !empty($horariosPorDia['sabado'])) {
-        $sabado = is_array($horariosPorDia['sabado']) ? $horariosPorDia['sabado'][0] : $horariosPorDia['sabado'];
+        $sabado = $horariosPorDia['sabado'];
         try {
-            $horaInicio = isset($sabado['hora_inicio']) ? $sabado['hora_inicio'] : '00:00';
-            $horaFin = isset($sabado['hora_fin']) ? $sabado['hora_fin'] : '23:59';
+            $horaInicio = isset($sabado['hora_inicio']) ? $sabado['hora_inicio'] : '00:00:00';
+            $horaFin = isset($sabado['hora_fin']) ? $sabado['hora_fin'] : '23:59:59';
             
-            if (is_object($horaInicio)) {
-                $horaInicio = $horaInicio->format('H:i');
+            // Limpiar formato
+            if (is_string($horaInicio) && strlen($horaInicio) > 5) {
+                $horaInicio = substr($horaInicio, 0, 5);
             }
-            if (is_object($horaFin)) {
-                $horaFin = $horaFin->format('H:i');
+            if (is_string($horaFin) && strlen($horaFin) > 5) {
+                $horaFin = substr($horaFin, 0, 5);
             }
             
             $horarios[] = 'Sáb: ' . $horaInicio . ' - ' . $horaFin;
@@ -733,16 +737,17 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
     
     // Domingos
     if (isset($horariosPorDia['domingo']) && !empty($horariosPorDia['domingo'])) {
-        $domingo = is_array($horariosPorDia['domingo']) ? $horariosPorDia['domingo'][0] : $horariosPorDia['domingo'];
+        $domingo = $horariosPorDia['domingo'];
         try {
-            $horaInicio = isset($domingo['hora_inicio']) ? $domingo['hora_inicio'] : '00:00';
-            $horaFin = isset($domingo['hora_fin']) ? $domingo['hora_fin'] : '23:59';
+            $horaInicio = isset($domingo['hora_inicio']) ? $domingo['hora_inicio'] : '00:00:00';
+            $horaFin = isset($domingo['hora_fin']) ? $domingo['hora_fin'] : '23:59:59';
             
-            if (is_object($horaInicio)) {
-                $horaInicio = $horaInicio->format('H:i');
+            // Limpiar formato
+            if (is_string($horaInicio) && strlen($horaInicio) > 5) {
+                $horaInicio = substr($horaInicio, 0, 5);
             }
-            if (is_object($horaFin)) {
-                $horaFin = $horaFin->format('H:i');
+            if (is_string($horaFin) && strlen($horaFin) > 5) {
+                $horaFin = substr($horaFin, 0, 5);
             }
             
             $horarios[] = 'Dom: ' . $horaInicio . ' - ' . $horaFin;
@@ -756,13 +761,22 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
 
 private function formatearTarifasParaLeyenda($tarifas)
 {
-    if (empty($tarifas)) {
+    if (empty($tarifas) || !is_array($tarifas) && !is_object($tarifas)) {
         return 'Gratuito';
     }
     
     // Convertir a collection si es array
     $tarifasCollection = collect($tarifas);
-    $precios = $tarifasCollection->pluck('precio_por_hora')->unique()->sort()->values();
+    
+    if ($tarifasCollection->isEmpty()) {
+        return 'Gratuito';
+    }
+    
+    $precios = $tarifasCollection->pluck('precio_por_hora')->filter()->unique()->sort()->values();
+    
+    if ($precios->isEmpty()) {
+        return 'Gratuito';
+    }
     
     if ($precios->count() === 1) {
         return '$' . number_format($precios->first(), 0);
