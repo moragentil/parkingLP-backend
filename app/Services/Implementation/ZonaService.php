@@ -377,32 +377,63 @@ class ZonaService implements ZonaServiceInterface
      */
     private function formatearZonaConTarifas($zona)
     {
-        // Obtener todas las tarifas disponibles
-        $tarifasDisponibles = TarifaHorario::where('activa', true)
-            ->orderBy('hora_inicio')
-            ->get()
-            ->map(function ($tarifa) {
-                return [
-                    'id' => $tarifa->id,
-                    'nombre' => $tarifa->nombre,
-                    'hora_inicio' => $tarifa->hora_inicio->format('H:i'),
-                    'hora_fin' => $tarifa->hora_fin->format('H:i'),
-                    'precio_por_hora' => (float) $tarifa->precio_por_hora,
-                    'descripcion' => $tarifa->descripcion
-                ];
-            });
+        // Obtener todas las tarifas disponibles con manejo de errores
+        try {
+            $tarifasDisponibles = TarifaHorario::where('activa', true)
+                ->orderBy('hora_inicio')
+                ->get()
+                ->map(function ($tarifa) {
+                    try {
+                        return [
+                            'id' => $tarifa->id,
+                            'nombre' => $tarifa->nombre,
+                            'hora_inicio' => $tarifa->hora_inicio ? $tarifa->hora_inicio->format('H:i') : '00:00',
+                            'hora_fin' => $tarifa->hora_fin ? $tarifa->hora_fin->format('H:i') : '23:59',
+                            'precio_por_hora' => (float) $tarifa->precio_por_hora,
+                            'descripcion' => $tarifa->descripcion
+                        ];
+                    } catch (\Exception $e) {
+                        // Si hay error al formatear una tarifa, usar valores por defecto
+                        return [
+                            'id' => $tarifa->id,
+                            'nombre' => $tarifa->nombre ?? 'Tarifa',
+                            'hora_inicio' => '00:00',
+                            'hora_fin' => '23:59',
+                            'precio_por_hora' => (float) ($tarifa->precio_por_hora ?? 0),
+                            'descripcion' => $tarifa->descripcion ?? ''
+                        ];
+                    }
+                });
+        } catch (\Exception $e) {
+            // Si hay error con las tarifas, usar array vacío
+            $tarifasDisponibles = collect([]);
+        }
 
-        // Formatear horarios por día
-        $horariosPorDia = $zona->horarios->groupBy('dia_semana')->map(function ($horarios, $dia) {
-            return $horarios->map(function ($horario) {
-                return [
-                    'id' => $horario->id,
-                    'hora_inicio' => $horario->hora_inicio->format('H:i'),
-                    'hora_fin' => $horario->hora_fin->format('H:i'),
-                    'activo' => $horario->activo
-                ];
-            })->first(); // Asumiendo un horario por día
-        });
+        // Formatear horarios por día con manejo de errores
+        try {
+            $horariosPorDia = $zona->horarios->groupBy('dia_semana')->map(function ($horarios, $dia) {
+                return $horarios->map(function ($horario) {
+                    try {
+                        return [
+                            'id' => $horario->id,
+                            'hora_inicio' => $horario->hora_inicio ? $horario->hora_inicio->format('H:i') : '00:00',
+                            'hora_fin' => $horario->hora_fin ? $horario->hora_fin->format('H:i') : '23:59',
+                            'activo' => $horario->activo ?? true
+                        ];
+                    } catch (\Exception $e) {
+                        // Si hay error al formatear un horario, usar valores por defecto
+                        return [
+                            'id' => $horario->id,
+                            'hora_inicio' => '00:00',
+                            'hora_fin' => '23:59',
+                            'activo' => true
+                        ];
+                    }
+                })->first(); // Asumiendo un horario por día
+            });
+        } catch (\Exception $e) {
+            $horariosPorDia = collect([]);
+        }
 
         // Determinar tipo de zona
         $tipo = 'libre'; // Por defecto
@@ -412,17 +443,22 @@ class ZonaService implements ZonaServiceInterface
             $tipo = 'paga'; // Si tiene horarios y no es prohibida, es de pago
         }
 
-        // Calcular tarifa actual (basada en la hora actual)
+        // Calcular tarifa actual (basada en la hora actual) con manejo de errores
         $horaActual = now()->format('H:i:s');
         $tarifaActual = null;
         if ($tipo === 'paga') {
-            $tarifa = TarifaHorario::obtenerTarifaPorHora($horaActual);
-            if ($tarifa) {
-                $tarifaActual = [
-                    'precio_por_hora' => (float) $tarifa->precio_por_hora,
-                    'nombre' => $tarifa->nombre,
-                    'descripcion' => $tarifa->descripcion
-                ];
+            try {
+                $tarifa = TarifaHorario::obtenerTarifaPorHora($horaActual);
+                if ($tarifa) {
+                    $tarifaActual = [
+                        'precio_por_hora' => (float) $tarifa->precio_por_hora,
+                        'nombre' => $tarifa->nombre,
+                        'descripcion' => $tarifa->descripcion
+                    ];
+                }
+            } catch (\Exception $e) {
+                // Si hay error al obtener tarifa, usar null
+                $tarifaActual = null;
             }
         }
 
@@ -470,34 +506,28 @@ class ZonaService implements ZonaServiceInterface
         }
     }
 
-    private function validarPoligono($poligono)
+    private function puntoEnPoligono($lat, $lng, $poligonos)
     {
-        if (!is_array($poligono) || empty($poligono)) {
+        if (empty($poligonos) || !is_array($poligonos)) {
             return false;
         }
-        
-        foreach ($poligono as $punto) {
-            if (!isset($punto['lat']) || !isset($punto['lng'])) {
-                return false;
-            }
-            
-            if (!is_numeric($punto['lat']) || !is_numeric($punto['lng'])) {
-                return false;
-            }
-            
-            if ($punto['lat'] < -90 || $punto['lat'] > 90) {
-                return false;
-            }
-            
-            if ($punto['lng'] < -180 || $punto['lng'] > 180) {
-                return false;
+
+        // Si es un polígono simple (array de coordenadas), convertir a array de polígonos
+        if (isset($poligonos[0]['lat'])) {
+            $poligonos = [$poligonos];
+        }
+
+        // Verificar en cada polígono
+        foreach ($poligonos as $poligono) {
+            if ($this->puntoEnPoligonoSimple($lat, $lng, $poligono)) {
+                return true;
             }
         }
-        
-        return count($poligono) >= 3;
+
+        return false;
     }
 
-    private function puntoEnPoligono($lat, $lng, $poligono)
+    private function puntoEnPoligonoSimple($lat, $lng, $poligono)
     {
         if (empty($poligono) || !is_array($poligono)) {
             return false;
@@ -521,47 +551,169 @@ class ZonaService implements ZonaServiceInterface
         return $dentro;
     }
 
-    private function zonaEstaEnRango($lat, $lng, $zona, $radio)
+    private function calcularCentroide($poligonos)
     {
-        if (empty($zona->poligono_coordenadas)) {
-            return false;
-        }
-        
-        if ($this->puntoEnPoligono($lat, $lng, $zona->poligono_coordenadas)) {
-            return true;
-        }
-        
-        $centroide = $this->calcularCentroide($zona->poligono_coordenadas);
-        if ($centroide) {
-            $distancia = sqrt(
-                pow($lat - $centroide['lat'], 2) + 
-                pow($lng - $centroide['lng'], 2)
-            );
-            
-            return $distancia <= $radio;
-        }
-        
-        return false;
-    }
-
-    private function calcularCentroide($poligono)
-    {
-        if (empty($poligono)) {
+        if (empty($poligonos)) {
             return null;
         }
-        
+
+        // Si es un polígono simple, convertir a array de polígonos
+        if (isset($poligonos[0]['lat'])) {
+            $poligonos = [$poligonos];
+        }
+
         $latTotal = 0;
         $lngTotal = 0;
-        $puntos = count($poligono);
-        
-        foreach ($poligono as $punto) {
-            $latTotal += $punto['lat'];
-            $lngTotal += $punto['lng'];
+        $puntosTotal = 0;
+
+        foreach ($poligonos as $poligono) {
+            foreach ($poligono as $punto) {
+                $latTotal += $punto['lat'];
+                $lngTotal += $punto['lng'];
+                $puntosTotal++;
+            }
         }
-        
+
+        if ($puntosTotal === 0) {
+            return null;
+        }
+
         return [
-            'lat' => $latTotal / $puntos,
-            'lng' => $lngTotal / $puntos
+            'lat' => $latTotal / $puntosTotal,
+            'lng' => $lngTotal / $puntosTotal
         ];
     }
+
+    private function validarPoligono($poligonos)
+    {
+        if (!is_array($poligonos) || empty($poligonos)) {
+            return false;
+        }
+
+        // Si es un polígono simple, convertir a array de polígonos
+        if (isset($poligonos[0]['lat'])) {
+            $poligonos = [$poligonos];
+        }
+
+        foreach ($poligonos as $poligono) {
+            if (!is_array($poligono) || count($poligono) < 3) {
+                return false;
+            }
+
+            foreach ($poligono as $punto) {
+                if (!isset($punto['lat']) || !isset($punto['lng'])) {
+                    return false;
+                }
+                
+                if (!is_numeric($punto['lat']) || !is_numeric($punto['lng'])) {
+                    return false;
+                }
+                
+                if ($punto['lat'] < -90 || $punto['lat'] > 90) {
+                    return false;
+                }
+                
+                if ($punto['lng'] < -180 || $punto['lng'] > 180) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+
+    public function obtenerLeyendaZonas()
+{
+    try {
+        $zonas = $this->obtenerZonasActivas();
+        
+        if (!$zonas['status']) {
+            return $zonas; // Retornar directamente el array, no response()->json()
+        }
+        
+        // Formatear datos específicamente para la leyenda del mapa
+        $leyenda = collect($zonas['zonas'])->map(function ($zona) {
+            return [
+                'id' => $zona['id'],
+                'nombre' => $zona['nombre'],
+                'color_mapa' => $zona['color_mapa'],
+                'tipo' => $zona['tipo'],
+                'es_prohibido_estacionar' => $zona['es_prohibido_estacionar'],
+                'horarios_formateados' => $this->formatearHorariosParaLeyenda($zona['horarios_por_dia']),
+                'tarifas_formateadas' => $this->formatearTarifasParaLeyenda($zona['tarifas_disponibles'])
+            ];
+        });
+        
+        return [
+            'status' => true,
+            'message' => 'Leyenda de zonas obtenida exitosamente',
+            'leyenda' => $leyenda,
+            'status_code' => 200
+        ];
+        
+    } catch (\Exception $e) {
+        return [
+            'status' => false,
+            'message' => 'Error al obtener leyenda de zonas',
+            'error' => $e->getMessage(),
+            'status_code' => 500
+        ];
+    }
+}
+
+private function formatearHorariosParaLeyenda($horariosPorDia)
+{
+    $horarios = [];
+    
+    // Convertir a array si es collection
+    if (is_object($horariosPorDia)) {
+        $horariosPorDia = $horariosPorDia->toArray();
+    }
+    
+    // Lunes a Viernes
+    $lunesViernes = [];
+    $diasSemana = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+    
+    foreach ($diasSemana as $dia) {
+        if (isset($horariosPorDia[$dia])) {
+            $horario = $horariosPorDia[$dia];
+            $lunesViernes[] = $horario['hora_inicio'] . ' - ' . $horario['hora_fin'];
+        }
+    }
+    
+    if (!empty($lunesViernes)) {
+        $horarios[] = 'Lun-Vie: ' . implode(', ', array_unique($lunesViernes));
+    }
+    
+    // Sábados
+    if (isset($horariosPorDia['sabado'])) {
+        $sabado = $horariosPorDia['sabado'];
+        $horarios[] = 'Sáb: ' . $sabado['hora_inicio'] . ' - ' . $sabado['hora_fin'];
+    }
+    
+    // Domingos
+    if (isset($horariosPorDia['domingo'])) {
+        $domingo = $horariosPorDia['domingo'];
+        $horarios[] = 'Dom: ' . $domingo['hora_inicio'] . ' - ' . $domingo['hora_fin'];
+    }
+    
+    return empty($horarios) ? ['Sin horarios definidos'] : $horarios;
+}
+
+private function formatearTarifasParaLeyenda($tarifas)
+{
+    if (empty($tarifas)) {
+        return 'Gratuito';
+    }
+    
+    // Convertir a collection si es array
+    $tarifasCollection = collect($tarifas);
+    $precios = $tarifasCollection->pluck('precio_por_hora')->unique()->sort()->values();
+    
+    if ($precios->count() === 1) {
+        return '$' . number_format($precios->first(), 0);
+    }
+    
+    return '$' . number_format($precios->min(), 0) . ' - $' . number_format($precios->max(), 0);
+}
 }

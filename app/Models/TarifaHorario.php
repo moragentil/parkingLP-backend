@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 
 class TarifaHorario extends Model
 {
@@ -21,22 +22,47 @@ class TarifaHorario extends Model
     ];
 
     protected $casts = [
-        'hora_inicio' => 'datetime:H:i:s',
-        'hora_fin' => 'datetime:H:i:s',
         'precio_por_hora' => 'decimal:2',
         'activa' => 'boolean'
     ];
+
+    // Remover el cast automático para manejar errores manualmente
+    public function getHoraInicioAttribute($value)
+    {
+        try {
+            if (!$value) return null;
+            return Carbon::createFromFormat('H:i:s', $value);
+        } catch (\Exception $e) {
+            return Carbon::createFromFormat('H:i:s', '00:00:00');
+        }
+    }
+
+    public function getHoraFinAttribute($value)
+    {
+        try {
+            if (!$value) return null;
+            return Carbon::createFromFormat('H:i:s', $value);
+        } catch (\Exception $e) {
+            return Carbon::createFromFormat('H:i:s', '23:59:59');
+        }
+    }
 
     /**
      * Verificar si un horario específico está dentro del rango de esta tarifa
      */
     public function aplicaEnHorario($hora)
     {
-        $horaCheck = is_string($hora) ? \Carbon\Carbon::createFromFormat('H:i:s', $hora) : $hora;
-        $inicio = \Carbon\Carbon::createFromFormat('H:i:s', $this->hora_inicio);
-        $fin = \Carbon\Carbon::createFromFormat('H:i:s', $this->hora_fin);
+        try {
+            $horaCheck = is_string($hora) ? Carbon::createFromFormat('H:i:s', $hora) : $hora;
+            $inicio = $this->hora_inicio;
+            $fin = $this->hora_fin;
 
-        return $horaCheck->between($inicio, $fin);
+            if (!$inicio || !$fin) return false;
+
+            return $horaCheck->between($inicio, $fin);
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     /**
@@ -44,10 +70,14 @@ class TarifaHorario extends Model
      */
     public static function obtenerTarifaPorHora($hora)
     {
-        return self::where('activa', true)
-            ->get()
-            ->first(function ($tarifa) use ($hora) {
-                return $tarifa->aplicaEnHorario($hora);
-            });
+        try {
+            return self::where('activa', true)
+                ->get()
+                ->first(function ($tarifa) use ($hora) {
+                    return $tarifa->aplicaEnHorario($hora);
+                });
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 }
