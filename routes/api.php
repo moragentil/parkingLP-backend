@@ -45,6 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/zonas/{id}/activar', [ZonaController::class, 'activarZona']);
     Route::post('/zonas/{id}/desactivar', [ZonaController::class, 'desactivarZona']);
     Route::get('/zonas-leyenda', [ZonaController::class, 'obtenerLeyendaZonas']);
+    Route::get('/zonas-mapa', [ZonaController::class, 'obtenerZonasParaMapa']);
     
     // Tarifas
     Route::get('/tarifas-horarias', [ZonaController::class, 'tarifasHorarias']);

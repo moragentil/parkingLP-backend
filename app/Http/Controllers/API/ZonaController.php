@@ -206,4 +206,10 @@ class ZonaController extends Controller
         $resultado = $this->zonaService->obtenerLeyendaZonas();
         return response()->json($resultado, $resultado['status_code']);
     }
+
+    public function obtenerZonasParaMapa()
+    {
+        $resultado = $this->zonaService->obtenerZonasParaMapa();
+        return response()->json($resultado, $resultado['status_code']);
+    }
 }

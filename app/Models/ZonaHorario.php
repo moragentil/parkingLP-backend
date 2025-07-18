@@ -24,25 +24,37 @@ class ZonaHorario extends Model
         'activo' => 'boolean'
     ];
 
-    // Manejar hora_inicio con validación
+    // Getter personalizado para hora_inicio
     public function getHoraInicioAttribute($value)
     {
         try {
-            if (!$value) return null;
-            return Carbon::createFromFormat('H:i:s', $value);
+            if (!$value) return '00:00:00';
+            
+            // Si ya es un string en formato correcto, devolverlo
+            if (is_string($value) && preg_match('/^\d{2}:\d{2}:\d{2}$/', $value)) {
+                return $value;
+            }
+            
+            return Carbon::createFromFormat('H:i:s', $value)->format('H:i:s');
         } catch (\Exception $e) {
-            return Carbon::createFromFormat('H:i:s', '00:00:00');
+            return '00:00:00';
         }
     }
 
-    // Manejar hora_fin con validación
+    // Getter personalizado para hora_fin
     public function getHoraFinAttribute($value)
     {
         try {
-            if (!$value) return null;
-            return Carbon::createFromFormat('H:i:s', $value);
+            if (!$value) return '23:59:59';
+            
+            // Si ya es un string en formato correcto, devolverlo
+            if (is_string($value) && preg_match('/^\d{2}:\d{2}:\d{2}$/', $value)) {
+                return $value;
+            }
+            
+            return Carbon::createFromFormat('H:i:s', $value)->format('H:i:s');
         } catch (\Exception $e) {
-            return Carbon::createFromFormat('H:i:s', '23:59:59');
+            return '23:59:59';
         }
     }
 
@@ -58,10 +70,8 @@ class ZonaHorario extends Model
     {
         try {
             $horaCheck = is_string($hora) ? Carbon::createFromFormat('H:i:s', $hora) : $hora;
-            $inicio = $this->hora_inicio;
-            $fin = $this->hora_fin;
-
-            if (!$inicio || !$fin) return false;
+            $inicio = Carbon::createFromFormat('H:i:s', $this->hora_inicio);
+            $fin = Carbon::createFromFormat('H:i:s', $this->hora_fin);
 
             return $horaCheck->between($inicio, $fin);
         } catch (\Exception $e) {

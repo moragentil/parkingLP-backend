@@ -670,31 +670,85 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
         $horariosPorDia = $horariosPorDia->toArray();
     }
     
+    if (empty($horariosPorDia)) {
+        return ['Sin horarios definidos'];
+    }
+    
     // Lunes a Viernes
     $lunesViernes = [];
     $diasSemana = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
     
     foreach ($diasSemana as $dia) {
-        if (isset($horariosPorDia[$dia])) {
-            $horario = $horariosPorDia[$dia];
-            $lunesViernes[] = $horario['hora_inicio'] . ' - ' . $horario['hora_fin'];
+        if (isset($horariosPorDia[$dia]) && !empty($horariosPorDia[$dia])) {
+            // Tomar el primer horario del día (asumiendo uno por día)
+            $horario = is_array($horariosPorDia[$dia]) ? $horariosPorDia[$dia][0] : $horariosPorDia[$dia];
+            
+            try {
+                $horaInicio = isset($horario['hora_inicio']) ? $horario['hora_inicio'] : '00:00';
+                $horaFin = isset($horario['hora_fin']) ? $horario['hora_fin'] : '23:59';
+                
+                // Si son objetos Carbon, formatearlos
+                if (is_object($horaInicio)) {
+                    $horaInicio = $horaInicio->format('H:i');
+                }
+                if (is_object($horaFin)) {
+                    $horaFin = $horaFin->format('H:i');
+                }
+                
+                $lunesViernes[] = $horaInicio . ' - ' . $horaFin;
+            } catch (\Exception $e) {
+                $lunesViernes[] = '00:00 - 23:59';
+            }
         }
     }
     
     if (!empty($lunesViernes)) {
-        $horarios[] = 'Lun-Vie: ' . implode(', ', array_unique($lunesViernes));
+        $horariosUnicos = array_unique($lunesViernes);
+        if (count($horariosUnicos) === 1) {
+            $horarios[] = 'Lun-Vie: ' . $horariosUnicos[0];
+        } else {
+            $horarios[] = 'Lun-Vie: ' . implode(', ', $horariosUnicos);
+        }
     }
     
     // Sábados
-    if (isset($horariosPorDia['sabado'])) {
-        $sabado = $horariosPorDia['sabado'];
-        $horarios[] = 'Sáb: ' . $sabado['hora_inicio'] . ' - ' . $sabado['hora_fin'];
+    if (isset($horariosPorDia['sabado']) && !empty($horariosPorDia['sabado'])) {
+        $sabado = is_array($horariosPorDia['sabado']) ? $horariosPorDia['sabado'][0] : $horariosPorDia['sabado'];
+        try {
+            $horaInicio = isset($sabado['hora_inicio']) ? $sabado['hora_inicio'] : '00:00';
+            $horaFin = isset($sabado['hora_fin']) ? $sabado['hora_fin'] : '23:59';
+            
+            if (is_object($horaInicio)) {
+                $horaInicio = $horaInicio->format('H:i');
+            }
+            if (is_object($horaFin)) {
+                $horaFin = $horaFin->format('H:i');
+            }
+            
+            $horarios[] = 'Sáb: ' . $horaInicio . ' - ' . $horaFin;
+        } catch (\Exception $e) {
+            $horarios[] = 'Sáb: 00:00 - 23:59';
+        }
     }
     
     // Domingos
-    if (isset($horariosPorDia['domingo'])) {
-        $domingo = $horariosPorDia['domingo'];
-        $horarios[] = 'Dom: ' . $domingo['hora_inicio'] . ' - ' . $domingo['hora_fin'];
+    if (isset($horariosPorDia['domingo']) && !empty($horariosPorDia['domingo'])) {
+        $domingo = is_array($horariosPorDia['domingo']) ? $horariosPorDia['domingo'][0] : $horariosPorDia['domingo'];
+        try {
+            $horaInicio = isset($domingo['hora_inicio']) ? $domingo['hora_inicio'] : '00:00';
+            $horaFin = isset($domingo['hora_fin']) ? $domingo['hora_fin'] : '23:59';
+            
+            if (is_object($horaInicio)) {
+                $horaInicio = $horaInicio->format('H:i');
+            }
+            if (is_object($horaFin)) {
+                $horaFin = $horaFin->format('H:i');
+            }
+            
+            $horarios[] = 'Dom: ' . $horaInicio . ' - ' . $horaFin;
+        } catch (\Exception $e) {
+            $horarios[] = 'Dom: 00:00 - 23:59';
+        }
     }
     
     return empty($horarios) ? ['Sin horarios definidos'] : $horarios;
@@ -715,5 +769,102 @@ private function formatearTarifasParaLeyenda($tarifas)
     }
     
     return '$' . number_format($precios->min(), 0) . ' - $' . number_format($precios->max(), 0);
+}
+
+public function obtenerZonasParaMapa()
+{
+    try {
+        $zonas = Zona::where('activa', true)
+            ->with(['horarios' => function ($query) {
+                $query->where('activo', true)->orderBy('dia_semana');
+            }])
+            ->orderBy('nombre')
+            ->get()
+            ->map(function ($zona) {
+                return $this->formatearZonaParaMapa($zona);
+            });
+        
+        return [
+            'status' => true,
+            'message' => 'Zonas para mapa obtenidas exitosamente',
+            'zonas' => $zonas,
+            'status_code' => 200
+        ];
+    } catch (\Exception $e) {
+        \Log::error('Error en obtenerZonasParaMapa: ' . $e->getMessage());
+        \Log::error('Stack trace: ' . $e->getTraceAsString());
+        
+        return [
+            'status' => false,
+            'message' => 'Error al obtener zonas para mapa',
+            'error' => $e->getMessage(),
+            'status_code' => 500
+        ];
+    }
+}
+
+private function formatearZonaParaMapa($zona)
+{
+    // Formatear horarios de manera legible usando la relación horarios
+    $horarios = [];
+    if ($zona->horarios && $zona->horarios->isNotEmpty()) {
+        $horarios = $this->formatearHorariosParaLeyenda($zona->horarios->groupBy('dia_semana'));
+    } else {
+        $horarios = ['Sin horarios definidos'];
+    }
+    
+    // Determinar tipo de zona
+    $tipo = 'libre';
+    if ($zona->es_prohibido_estacionar) {
+        $tipo = 'prohibida';
+    } elseif ($zona->horarios && $zona->horarios->isNotEmpty() && !$zona->es_prohibido_estacionar) {
+        $tipo = 'paga';
+    }
+
+    // Formatear polígonos para Google Maps
+    $poligonos = $this->formatearPoligonosParaGoogleMaps($zona->poligono_coordenadas);
+
+    return [
+        'id' => $zona->id,
+        'nombre' => $zona->nombre,
+        'descripcion' => $zona->descripcion,
+        'tipo' => $tipo,
+        'color_mapa' => $zona->color_mapa,
+        'es_prohibido_estacionar' => $zona->es_prohibido_estacionar,
+        'poligonos' => $poligonos,
+        'horarios_formateados' => $horarios,
+        'centroide' => $this->calcularCentroide($zona->poligono_coordenadas),
+        'activa' => $zona->activa
+    ];
+}
+
+private function formatearPoligonosParaGoogleMaps($coordenadas)
+{
+    if (empty($coordenadas) || !is_array($coordenadas)) {
+        return [];
+    }
+
+    // Si es un polígono simple (array de coordenadas), convertir a array de polígonos
+    if (isset($coordenadas[0]['lat'])) {
+        $coordenadas = [$coordenadas];
+    }
+
+    $poligonos = [];
+    
+    foreach ($coordenadas as $index => $poligono) {
+        if (is_array($poligono) && !empty($poligono)) {
+            $poligonos[] = [
+                'id' => $index,
+                'paths' => array_map(function ($punto) {
+                    return [
+                        'lat' => (float) $punto['lat'],
+                        'lng' => (float) $punto['lng']
+                    ];
+                }, $poligono)
+            ];
+        }
+    }
+
+    return $poligonos;
 }
 }
