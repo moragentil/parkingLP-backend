@@ -13,4 +13,5 @@ interface ZonaServiceInterface
     public function obtenerZonasPorTipo($tipo);
     public function verificarPuntoEnZona($latitud, $longitud, $zonaId);
     public function obtenerZonasCercanas($latitud, $longitud, $radio);
+    public function obtenerTarifasHorarias(); // Nuevo método
 }

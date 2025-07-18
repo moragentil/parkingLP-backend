@@ -3,6 +3,7 @@
 namespace App\Services\Implementation;
 
 use App\Models\Zona;
+use App\Models\TarifaHorario;
 use App\Services\Interface\ZonaServiceInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -12,7 +13,12 @@ class ZonaService implements ZonaServiceInterface
     public function obtenerTodasLasZonas()
     {
         try {
-            $zonas = Zona::with('estacionamientos')->orderBy('nombre')->get();
+            $zonas = Zona::with(['estacionamientos', 'horarios'])
+                ->orderBy('nombre')
+                ->get()
+                ->map(function ($zona) {
+                    return $this->formatearZonaConTarifas($zona);
+                });
             
             return [
                 'status' => true,
@@ -34,9 +40,12 @@ class ZonaService implements ZonaServiceInterface
     {
         try {
             $zonas = Zona::where('activa', true)
-                ->with('estacionamientos')
+                ->with(['estacionamientos', 'horarios'])
                 ->orderBy('nombre')
-                ->get();
+                ->get()
+                ->map(function ($zona) {
+                    return $this->formatearZonaConTarifas($zona);
+                });
             
             return [
                 'status' => true,
@@ -57,14 +66,19 @@ class ZonaService implements ZonaServiceInterface
     public function obtenerZona($zonaId)
     {
         try {
-            $zona = Zona::with(['estacionamientos' => function ($query) {
-                $query->where('estado', 'activo');
-            }])->findOrFail($zonaId);
+            $zona = Zona::with([
+                'estacionamientos' => function ($query) {
+                    $query->where('estado', 'activo');
+                },
+                'horarios'
+            ])->findOrFail($zonaId);
+            
+            $zonaFormateada = $this->formatearZonaConTarifas($zona);
             
             return [
                 'status' => true,
                 'message' => 'Zona obtenida exitosamente',
-                'zona' => $zona,
+                'zona' => $zonaFormateada,
                 'status_code' => 200
             ];
         } catch (ModelNotFoundException $e) {
@@ -113,20 +127,18 @@ class ZonaService implements ZonaServiceInterface
                 'descripcion' => $datos['descripcion'] ?? null,
                 'color_mapa' => $datos['color_mapa'] ?? '#FF0000',
                 'poligono_coordenadas' => $datos['poligono_coordenadas'] ?? [],
-                'hora_inicio' => $datos['hora_inicio'] ?? '08:00:00',
-                'hora_fin' => $datos['hora_fin'] ?? '20:00:00',
-                'dias_habilitados' => $datos['dias_habilitados'] ?? ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'],
-                'tarifa_por_hora' => $datos['tarifa_por_hora'] ?? 0,
                 'es_prohibido_estacionar' => $datos['es_prohibido_estacionar'] ?? false,
                 'activa' => $datos['activa'] ?? true
             ]);
 
             DB::commit();
             
+            $zonaFormateada = $this->formatearZonaConTarifas($zona);
+            
             return [
                 'status' => true,
                 'message' => 'Zona creada exitosamente',
-                'zona' => $zona,
+                'zona' => $zonaFormateada,
                 'status_code' => 201
             ];
         } catch (\Exception $e) {
@@ -172,12 +184,11 @@ class ZonaService implements ZonaServiceInterface
                 }
             }
 
-            // Preparar datos de actualización
+            // Preparar datos de actualización (sin campos eliminados)
             $datosActualizacion = [];
             
             $camposPermitidos = [
                 'nombre', 'descripcion', 'color_mapa', 'poligono_coordenadas',
-                'hora_inicio', 'hora_fin', 'dias_habilitados', 'tarifa_por_hora', 
                 'es_prohibido_estacionar', 'activa'
             ];
             
@@ -191,10 +202,12 @@ class ZonaService implements ZonaServiceInterface
 
             DB::commit();
             
+            $zonaFormateada = $this->formatearZonaConTarifas($zona->fresh(['horarios']));
+            
             return [
                 'status' => true,
                 'message' => 'Zona actualizada exitosamente',
-                'zona' => $zona->fresh(),
+                'zona' => $zonaFormateada,
                 'status_code' => 200
             ];
         } catch (ModelNotFoundException $e) {
@@ -224,10 +237,12 @@ class ZonaService implements ZonaServiceInterface
             
             $mensaje = $activa ? 'Zona activada exitosamente' : 'Zona desactivada exitosamente';
             
+            $zonaFormateada = $this->formatearZonaConTarifas($zona->load('horarios'));
+            
             return [
                 'status' => true,
                 'message' => $mensaje,
-                'zona' => $zona,
+                'zona' => $zonaFormateada,
                 'status_code' => 200
             ];
         } catch (ModelNotFoundException $e) {
@@ -252,16 +267,24 @@ class ZonaService implements ZonaServiceInterface
             $query = Zona::where('activa', true);
             
             if ($tipo === 'pago') {
-                $query->where('es_prohibido_estacionar', false)
-                      ->where('tarifa_por_hora', '>', 0);
+                $query->where('es_prohibido_estacionar', false);
             } elseif ($tipo === 'libre') {
-                $query->where('es_prohibido_estacionar', false)
-                      ->where('tarifa_por_hora', 0);
+                $query->where('es_prohibido_estacionar', false);
             } elseif ($tipo === 'prohibido') {
                 $query->where('es_prohibido_estacionar', true);
             }
             
-            $zonas = $query->orderBy('nombre')->get();
+            $zonas = $query->with(['horarios'])
+                ->orderBy('nombre')
+                ->get()
+                ->map(function ($zona) {
+                    return $this->formatearZonaConTarifas($zona);
+                })
+                ->filter(function ($zona) use ($tipo) {
+                    // Filtrar por tipo después de formatear
+                    return $zona['tipo'] === $tipo;
+                })
+                ->values(); // Reindexar el array
             
             return [
                 'status' => true,
@@ -283,15 +306,17 @@ class ZonaService implements ZonaServiceInterface
     public function verificarPuntoEnZona($latitud, $longitud, $zonaId)
     {
         try {
-            $zona = Zona::findOrFail($zonaId);
+            $zona = Zona::with('horarios')->findOrFail($zonaId);
             
             $estaEnZona = $this->puntoEnPoligono($latitud, $longitud, $zona->poligono_coordenadas);
+            
+            $zonaFormateada = $this->formatearZonaConTarifas($zona);
             
             return [
                 'status' => true,
                 'message' => $estaEnZona ? 'El punto está dentro de la zona' : 'El punto está fuera de la zona',
                 'esta_en_zona' => $estaEnZona,
-                'zona' => $zona,
+                'zona' => $zonaFormateada,
                 'coordenadas' => [
                     'latitud' => $latitud,
                     'longitud' => $longitud
@@ -317,12 +342,12 @@ class ZonaService implements ZonaServiceInterface
     public function obtenerZonasCercanas($latitud, $longitud, $radio = 0.01)
     {
         try {
-            $zonas = Zona::where('activa', true)->get();
+            $zonas = Zona::where('activa', true)->with('horarios')->get();
             $zonasCercanas = [];
             
             foreach ($zonas as $zona) {
                 if ($this->zonaEstaEnRango($latitud, $longitud, $zona, $radio)) {
-                    $zonasCercanas[] = $zona;
+                    $zonasCercanas[] = $this->formatearZonaConTarifas($zona);
                 }
             }
             
@@ -341,6 +366,104 @@ class ZonaService implements ZonaServiceInterface
             return [
                 'status' => false,
                 'message' => 'Error al obtener zonas cercanas',
+                'error' => $e->getMessage(),
+                'status_code' => 500
+            ];
+        }
+    }
+
+    /**
+     * Formatear zona con horarios y tarifas dinámicas
+     */
+    private function formatearZonaConTarifas($zona)
+    {
+        // Obtener todas las tarifas disponibles
+        $tarifasDisponibles = TarifaHorario::where('activa', true)
+            ->orderBy('hora_inicio')
+            ->get()
+            ->map(function ($tarifa) {
+                return [
+                    'id' => $tarifa->id,
+                    'nombre' => $tarifa->nombre,
+                    'hora_inicio' => $tarifa->hora_inicio->format('H:i'),
+                    'hora_fin' => $tarifa->hora_fin->format('H:i'),
+                    'precio_por_hora' => (float) $tarifa->precio_por_hora,
+                    'descripcion' => $tarifa->descripcion
+                ];
+            });
+
+        // Formatear horarios por día
+        $horariosPorDia = $zona->horarios->groupBy('dia_semana')->map(function ($horarios, $dia) {
+            return $horarios->map(function ($horario) {
+                return [
+                    'id' => $horario->id,
+                    'hora_inicio' => $horario->hora_inicio->format('H:i'),
+                    'hora_fin' => $horario->hora_fin->format('H:i'),
+                    'activo' => $horario->activo
+                ];
+            })->first(); // Asumiendo un horario por día
+        });
+
+        // Determinar tipo de zona
+        $tipo = 'libre'; // Por defecto
+        if ($zona->es_prohibido_estacionar) {
+            $tipo = 'prohibida';
+        } elseif ($zona->horarios->isNotEmpty() && !$zona->es_prohibido_estacionar) {
+            $tipo = 'paga'; // Si tiene horarios y no es prohibida, es de pago
+        }
+
+        // Calcular tarifa actual (basada en la hora actual)
+        $horaActual = now()->format('H:i:s');
+        $tarifaActual = null;
+        if ($tipo === 'paga') {
+            $tarifa = TarifaHorario::obtenerTarifaPorHora($horaActual);
+            if ($tarifa) {
+                $tarifaActual = [
+                    'precio_por_hora' => (float) $tarifa->precio_por_hora,
+                    'nombre' => $tarifa->nombre,
+                    'descripcion' => $tarifa->descripcion
+                ];
+            }
+        }
+
+        return [
+            'id' => $zona->id,
+            'nombre' => $zona->nombre,
+            'descripcion' => $zona->descripcion,
+            'color_mapa' => $zona->color_mapa,
+            'poligono_coordenadas' => $zona->poligono_coordenadas,
+            'es_prohibido_estacionar' => $zona->es_prohibido_estacionar,
+            'activa' => $zona->activa,
+            'tipo' => $tipo,
+            'horarios_por_dia' => $horariosPorDia,
+            'tarifas_disponibles' => $tarifasDisponibles,
+            'tarifa_actual' => $tarifaActual,
+            'estacionamientos' => $zona->estacionamientos ?? [],
+            'created_at' => $zona->created_at,
+            'updated_at' => $zona->updated_at
+        ];
+    }
+
+    /**
+     * Obtener tarifas horarias disponibles
+     */
+    public function obtenerTarifasHorarias()
+    {
+        try {
+            $tarifas = TarifaHorario::where('activa', true)
+                ->orderBy('hora_inicio')
+                ->get();
+            
+            return [
+                'status' => true,
+                'message' => 'Tarifas horarias obtenidas exitosamente',
+                'tarifas' => $tarifas,
+                'status_code' => 200
+            ];
+        } catch (\Exception $e) {
+            return [
+                'status' => false,
+                'message' => 'Error al obtener tarifas horarias',
                 'error' => $e->getMessage(),
                 'status_code' => 500
             ];

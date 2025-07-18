@@ -194,4 +194,10 @@ class ZonaController extends Controller
         $resultado = $this->zonaService->activarDesactivarZona($id, false);
         return response()->json($resultado, $resultado['status_code']);
     }
+
+    public function tarifasHorarias()
+    {
+        $resultado = $this->zonaService->obtenerTarifasHorarias();
+        return response()->json($resultado, $resultado['status_code']);
+    }
 }
