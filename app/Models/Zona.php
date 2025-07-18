@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 
 class Zona extends Model
 {
@@ -13,29 +14,72 @@ class Zona extends Model
     
     protected $fillable = [
         'nombre',
-        'poligono_coordenadas', // JSON con coordenadas del polígono
-        'hora_inicio',
-        'hora_fin',
-        'dias_habilitados', // (ej. ["lunes", "martes", "miércoles"])
-        'tarifa_por_hora',
+        'poligono_coordenadas',
         'color_mapa',
-        'es_prohibido_estacionar', // Indica si es una zona de prohibición
+        'es_prohibido_estacionar',
         'activa',
         'descripcion'
     ];
 
     protected $casts = [
         'poligono_coordenadas' => 'array',
-        'dias_habilitados' => 'array',
-        'hora_inicio' => 'datetime',
-        'hora_fin' => 'datetime',
         'es_prohibido_estacionar' => 'boolean',
-        'activa' => 'boolean',
-        'tarifa_por_hora' => 'decimal:2'
+        'activa' => 'boolean'
     ];
     
     public function estacionamientos()
     {
         return $this->hasMany(Estacionamiento::class);
+    }
+
+    public function horarios()
+    {
+        return $this->hasMany(ZonaHorario::class);
+    }
+
+    /**
+     * Verificar si la zona está activa en un día y hora específicos
+     */
+    public function estaActivaEnDiaYHora($diaSemana, $hora)
+    {
+        if (!$this->activa) {
+            return false;
+        }
+
+        $horario = $this->horarios()
+            ->where('dia_semana', $diaSemana)
+            ->where('activo', true)
+            ->first();
+
+        if (!$horario) {
+            return false;
+        }
+
+        return $horario->estaEnHorario($hora);
+    }
+
+    /**
+     * Obtener la tarifa aplicable en una hora específica
+     */
+    public function obtenerTarifaEnHora($hora)
+    {
+        if ($this->es_prohibido_estacionar) {
+            return 0;
+        }
+
+        $tarifa = TarifaHorario::obtenerTarifaPorHora($hora);
+        return $tarifa ? $tarifa->precio_por_hora : 0;
+    }
+
+    /**
+     * Obtener todos los horarios de la zona agrupados por día
+     */
+    public function getHorariosPorDia()
+    {
+        return $this->horarios()
+            ->where('activo', true)
+            ->orderBy('dia_semana')
+            ->get()
+            ->groupBy('dia_semana');
     }
 }

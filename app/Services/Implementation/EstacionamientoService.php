@@ -304,10 +304,25 @@ class EstacionamientoService implements EstacionamientoServiceInterface
                 ? Carbon::parse($estacionamiento->fecha_fin . ' ' . $estacionamiento->hora_fin)
                 : now();
 
-            $horas = $inicio->diffInHours($fin, false);
-            $horasRedondeadas = ceil($horas); // Redondear hacia arriba
+            $costoTotal = 0;
+            $horaActual = $inicio->copy();
 
-            return $horasRedondeadas * $estacionamiento->zona->tarifa_por_hora;
+            // Calcular costo hora por hora aplicando tarifas variables
+            while ($horaActual->lt($fin)) {
+                $horaFin = $horaActual->copy()->addHour();
+                if ($horaFin->gt($fin)) {
+                    $horaFin = $fin;
+                }
+
+                $tarifa = $estacionamiento->zona->obtenerTarifaEnHora($horaActual->format('H:i:s'));
+                $minutos = $horaActual->diffInMinutes($horaFin);
+                $costoHora = ($tarifa * $minutos) / 60;
+                
+                $costoTotal += $costoHora;
+                $horaActual = $horaFin;
+            }
+
+            return round($costoTotal, 2);
         } catch (\Exception $e) {
             return 0;
         }
