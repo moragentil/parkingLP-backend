@@ -146,4 +146,53 @@ class UsuarioController extends Controller
         $resultado = $this->usuarioService->buscarUsuarios($request->criterio);
         return response()->json($resultado, $resultado['status_code']);
     }
+
+    /**
+     * Actualizar perfil del usuario autenticado
+     */
+    public function actualizarPerfil(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'nombre' => 'sometimes|required|string|max:255',
+            'email' => 'sometimes|required|string|email|max:255',
+            'telefono' => 'nullable|string|max:20',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $resultado = $this->usuarioService->actualizarPerfil($request->user()->id, $request->all());
+        return response()->json($resultado, $resultado['status_code']);
+    }
+
+    /**
+     * Cambiar contraseña del usuario autenticado
+     */
+    public function cambiarMiPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'password_actual' => 'required|string',
+            'password_nueva' => 'required|string|min:8|confirmed',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $resultado = $this->usuarioService->cambiarPassword(
+            $request->user()->id,
+            $request->password_actual,
+            $request->password_nueva
+        );
+        return response()->json($resultado, $resultado['status_code']);
+    }
 }

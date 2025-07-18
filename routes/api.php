@@ -19,7 +19,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     
     // Usuarios
+    Route::put('/usuarios/me/perfil', [UsuarioController::class, 'actualizarPerfil']);
     Route::apiResource('usuarios', UsuarioController::class);
+    Route::post('/usuarios/me/cambiar-password', [UsuarioController::class, 'cambiarMiPassword']);
     Route::post('/usuarios/{id}/cambiar-password', [UsuarioController::class, 'cambiarPassword']);
     Route::get('/usuarios/buscar', [UsuarioController::class, 'buscar']);
     
