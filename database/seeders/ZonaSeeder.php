@@ -208,6 +208,35 @@ class ZonaSeeder extends Seeder
                     ['dia_semana' => 'sabado', 'hora_inicio' => '00:00:00', 'hora_fin' => '23:59:59'],
                     ['dia_semana' => 'domingo', 'hora_inicio' => '00:00:00', 'hora_fin' => '23:59:59']
                 ]
+            ],
+
+            // ZONA DE PRUEBA - Para testing de la aplicación
+            [
+                'zona' => [
+                    'nombre' => 'Zona de Prueba',
+                    'descripcion' => 'Zona de prueba para desarrollo y testing - Disponible 24/7',
+                    'color_mapa' => '#ff6b35',
+                    'poligono_coordenadas' => [
+                        // Polígono de tu ubicación actual
+                        [
+                            ['lat' => -34.912077462778086, 'lng' => -57.967057133774176],
+                            ['lat' => -34.914896787455525, 'lng' => -57.970130028941966],
+                            ['lat' => -34.9174674786858, 'lng' => -57.96683649094878],
+                            ['lat' => -34.91456631858213, 'lng' => -57.96369961249452],
+                            ['lat' => -34.912077462778086, 'lng' => -57.967057133774176]
+                        ]
+                    ],
+                    'es_prohibido_estacionar' => false,
+                    'activa' => true
+                ],
+                'horarios' => [
+                    ['dia_semana' => 'lunes', 'hora_inicio' => '07:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'martes', 'hora_inicio' => '07:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'miercoles', 'hora_inicio' => '07:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'jueves', 'hora_inicio' => '07:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'viernes', 'hora_inicio' => '07:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'sabado', 'hora_inicio' => '09:00:00', 'hora_fin' => '14:00:00']
+                ]
             ]
         ];
 
