@@ -881,4 +881,325 @@ private function formatearPoligonosParaGoogleMaps($coordenadas)
 
     return $poligonos;
 }
+
+public function obtenerZonaPorCoordenadas($latitud, $longitud)
+{
+    try {
+        // Buscar todas las zonas activas
+        $zonas = Zona::where('activa', true)
+            ->with(['horarios' => function ($query) {
+                $query->where('activo', true)->orderBy('dia_semana');
+            }, 'estacionamientos' => function ($query) {
+                $query->where('estado', 'activo');
+            }])
+            ->get();
+
+        // Verificar en cuál zona está el punto
+        foreach ($zonas as $zona) {
+            if ($this->puntoEnPoligono($latitud, $longitud, $zona->poligono_coordenadas)) {
+                // Formatear la zona con toda la información disponible
+                $zonaCompleta = $this->formatearZonaCompleta($zona, $latitud, $longitud);
+                
+                return [
+                    'status' => true,
+                    'message' => 'Zona encontrada exitosamente',
+                    'zona' => $zonaCompleta,
+                    'coordenadas_consultadas' => [
+                        'latitud' => $latitud,
+                        'longitud' => $longitud
+                    ],
+                    'status_code' => 200
+                ];
+            }
+        }
+
+        // Si no se encuentra en ninguna zona
+        return [
+            'status' => false,
+            'message' => 'No se encontró ninguna zona para las coordenadas proporcionadas',
+            'zona' => null,
+            'coordenadas_consultadas' => [
+                'latitud' => $latitud,
+                'longitud' => $longitud
+            ],
+            'es_zona_libre' => true,
+            'status_code' => 404
+        ];
+
+    } catch (\Exception $e) {
+        \Log::error('Error en obtenerZonaPorCoordenadas: ' . $e->getMessage());
+        \Log::error('Coordenadas: lat=' . $latitud . ', lng=' . $longitud);
+        
+        return [
+            'status' => false,
+            'message' => 'Error al obtener información de zona',
+            'error' => $e->getMessage(),
+            'zona' => null,
+            'status_code' => 500
+        ];
+    }
+}
+
+/**
+ * Formatear zona con información completa y contexto actual
+ */
+private function formatearZonaCompleta($zona, $latitudConsultada, $longitudConsultada)
+{
+    $ahora = now();
+    $diaActual = strtolower($ahora->locale('es')->dayName);
+    $horaActual = $ahora->format('H:i:s');
+
+    // Información básica de la zona
+    $zonaInfo = [
+        'id' => $zona->id,
+        'nombre' => $zona->nombre,
+        'descripcion' => $zona->descripcion,
+        'color_mapa' => $zona->color_mapa,
+        'es_prohibido_estacionar' => $zona->es_prohibido_estacionar,
+        'activa' => $zona->activa,
+        'created_at' => $zona->created_at,
+        'updated_at' => $zona->updated_at
+    ];
+
+    // Determinar tipo de zona
+    $tipo = 'libre';
+    if ($zona->es_prohibido_estacionar) {
+        $tipo = 'prohibida';
+    } elseif ($zona->horarios && $zona->horarios->isNotEmpty()) {
+        $tipo = 'paga';
+    }
+    $zonaInfo['tipo'] = $tipo;
+
+    // Información de polígonos
+    $zonaInfo['poligonos'] = $this->formatearPoligonosParaGoogleMaps($zona->poligono_coordenadas);
+    $zonaInfo['centroide'] = $this->calcularCentroide($zona->poligono_coordenadas);
+    
+    // Distancia al centroide
+    if ($zonaInfo['centroide']) {
+        $zonaInfo['distancia_al_centro'] = $this->calcularDistancia(
+            $latitudConsultada, 
+            $longitudConsultada,
+            $zonaInfo['centroide']['lat'],
+            $zonaInfo['centroide']['lng']
+        );
+    }
+
+    // Información de horarios
+    $zonaInfo['horarios'] = [
+        'por_dia' => [],
+        'formateados' => [],
+        'esta_activa_ahora' => false,
+        'horario_actual' => null,
+        'proximo_cambio' => null
+    ];
+
+    if ($zona->horarios && $zona->horarios->isNotEmpty()) {
+        // Horarios por día
+        $horariosPorDia = $zona->horarios->groupBy('dia_semana');
+        
+        foreach ($horariosPorDia as $dia => $horariosDelDia) {
+            $horario = $horariosDelDia->first();
+            $zonaInfo['horarios']['por_dia'][$dia] = [
+                'id' => $horario->id,
+                'hora_inicio' => $horario->hora_inicio,
+                'hora_fin' => $horario->hora_fin,
+                'activo' => $horario->activo
+            ];
+        }
+
+        // Horarios formateados para mostrar
+        $zonaInfo['horarios']['formateados'] = $this->formatearHorariosParaLeyenda($horariosPorDia);
+
+        // Verificar si está activa ahora
+        $horarioHoy = $horariosPorDia->get($diaActual);
+        if ($horarioHoy && $horarioHoy->isNotEmpty()) {
+            $horario = $horarioHoy->first();
+            $zonaInfo['horarios']['horario_actual'] = [
+                'dia' => $diaActual,
+                'hora_inicio' => $horario->hora_inicio,
+                'hora_fin' => $horario->hora_fin
+            ];
+            
+            $zonaInfo['horarios']['esta_activa_ahora'] = $horario->estaEnHorario($horaActual);
+            
+            // Calcular próximo cambio de estado
+            $zonaInfo['horarios']['proximo_cambio'] = $this->calcularProximoCambio($horariosPorDia, $ahora);
+        }
+    }
+
+    // Información de tarifas
+    $zonaInfo['tarifas'] = [
+        'disponibles' => [],
+        'actual' => null,
+        'formateada' => 'Gratuito'
+    ];
+
+    if ($tipo === 'paga') {
+        try {
+            $tarifasDisponibles = TarifaHorario::where('activa', true)
+                ->orderBy('hora_inicio')
+                ->get();
+
+            $zonaInfo['tarifas']['disponibles'] = $tarifasDisponibles->map(function ($tarifa) {
+                return [
+                    'id' => $tarifa->id,
+                    'nombre' => $tarifa->nombre,
+                    'hora_inicio' => $tarifa->hora_inicio,
+                    'hora_fin' => $tarifa->hora_fin,
+                    'precio_por_hora' => (float) $tarifa->precio_por_hora,
+                    'descripcion' => $tarifa->descripcion,
+                    'activa' => $tarifa->activa
+                ];
+            });
+
+            // Tarifa actual
+            $tarifaActual = TarifaHorario::obtenerTarifaPorHora($horaActual);
+            if ($tarifaActual) {
+                $zonaInfo['tarifas']['actual'] = [
+                    'id' => $tarifaActual->id,
+                    'nombre' => $tarifaActual->nombre,
+                    'precio_por_hora' => (float) $tarifaActual->precio_por_hora,
+                    'descripcion' => $tarifaActual->descripcion,
+                    'aplica_desde' => $tarifaActual->hora_inicio,
+                    'aplica_hasta' => $tarifaActual->hora_fin
+                ];
+            }
+
+            $zonaInfo['tarifas']['formateada'] = $this->formatearTarifasParaLeyenda($zonaInfo['tarifas']['disponibles']);
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo tarifas para zona: ' . $e->getMessage());
+        }
+    }
+
+    // Información de estacionamientos activos
+    $zonaInfo['estacionamientos'] = [
+        'total_activos' => $zona->estacionamientos ? $zona->estacionamientos->count() : 0,
+        'activos' => []
+    ];
+
+    if ($zona->estacionamientos && $zona->estacionamientos->isNotEmpty()) {
+        $zonaInfo['estacionamientos']['activos'] = $zona->estacionamientos->map(function ($estacionamiento) {
+            return [
+                'id' => $estacionamiento->id,
+                'vehiculo_id' => $estacionamiento->vehiculo_id,
+                'fecha_inicio' => $estacionamiento->fecha_inicio,
+                'hora_inicio' => $estacionamiento->hora_inicio,
+                'estado' => $estacionamiento->estado,
+                'latitud' => $estacionamiento->latitud,
+                'longitud' => $estacionamiento->longitud
+            ];
+        });
+    }
+
+    // Estado general y recomendaciones
+    $zonaInfo['estado_actual'] = [
+        'puede_estacionar' => !$zona->es_prohibido_estacionar && ($zonaInfo['horarios']['esta_activa_ahora'] || $tipo === 'libre'),
+        'requiere_pago' => $tipo === 'paga' && $zonaInfo['horarios']['esta_activa_ahora'],
+        'mensaje' => $this->generarMensajeEstado($zona, $zonaInfo),
+        'recomendacion' => $this->generarRecomendacion($zona, $zonaInfo)
+    ];
+
+    return $zonaInfo;
+}
+
+/**
+ * Calcular distancia entre dos puntos en kilómetros
+ */
+private function calcularDistancia($lat1, $lng1, $lat2, $lng2)
+{
+    $radioTierra = 6371; // Radio de la Tierra en kilómetros
+    
+    $deltaLat = deg2rad($lat2 - $lat1);
+    $deltaLng = deg2rad($lng2 - $lng1);
+    
+    $a = sin($deltaLat/2) * sin($deltaLat/2) +
+         cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+         sin($deltaLng/2) * sin($deltaLng/2);
+    
+    $c = 2 * atan2(sqrt($a), sqrt(1-$a));
+    
+    return round($radioTierra * $c * 1000, 2); // Retornar en metros
+}
+
+/**
+ * Calcular próximo cambio de estado de la zona
+ */
+private function calcularProximoCambio($horariosPorDia, $ahora)
+{
+    $diaActual = strtolower($ahora->locale('es')->dayName);
+    $horaActual = $ahora->format('H:i:s');
+    
+    $horarioHoy = $horariosPorDia->get($diaActual);
+    
+    if ($horarioHoy && $horarioHoy->isNotEmpty()) {
+        $horario = $horarioHoy->first();
+        
+        if ($horaActual < $horario->hora_inicio) {
+            return [
+                'tipo' => 'activacion',
+                'hora' => $horario->hora_inicio,
+                'mensaje' => 'La zona se activará a las ' . substr($horario->hora_inicio, 0, 5)
+            ];
+        } elseif ($horaActual >= $horario->hora_inicio && $horaActual < $horario->hora_fin) {
+            return [
+                'tipo' => 'desactivacion',
+                'hora' => $horario->hora_fin,
+                'mensaje' => 'La zona se desactivará a las ' . substr($horario->hora_fin, 0, 5)
+            ];
+        }
+    }
+    
+    return [
+        'tipo' => 'ninguno',
+        'hora' => null,
+        'mensaje' => 'No hay cambios programados para hoy'
+    ];
+}
+
+/**
+ * Generar mensaje descriptivo del estado actual
+ */
+private function generarMensajeEstado($zona, $zonaInfo)
+{
+    if ($zona->es_prohibido_estacionar) {
+        return 'Prohibido estacionar en esta zona';
+    }
+    
+    if ($zonaInfo['tipo'] === 'libre') {
+        return 'Zona libre - Estacionamiento gratuito sin restricciones';
+    }
+    
+    if ($zonaInfo['horarios']['esta_activa_ahora']) {
+        $tarifa = $zonaInfo['tarifas']['actual'];
+        $precio = $tarifa ? '$' . number_format($tarifa['precio_por_hora'], 0) . '/hora' : 'Consultar tarifa';
+        return 'Zona activa - Estacionamiento pago (' . $precio . ')';
+    }
+    
+    return 'Zona inactiva - Estacionamiento gratuito temporalmente';
+}
+
+/**
+ * Generar recomendación para el usuario
+ */
+private function generarRecomendacion($zona, $zonaInfo)
+{
+    if ($zona->es_prohibido_estacionar) {
+        return 'Busque otra zona para estacionar';
+    }
+    
+    if (!$zonaInfo['estado_actual']['puede_estacionar']) {
+        return 'No es posible estacionar en este momento';
+    }
+    
+    if ($zonaInfo['estado_actual']['requiere_pago']) {
+        $proximoCambio = $zonaInfo['horarios']['proximo_cambio'];
+        $mensaje = 'Recuerde activar el estacionamiento pago';
+        if ($proximoCambio && $proximoCambio['tipo'] === 'desactivacion') {
+            $mensaje .= '. ' . $proximoCambio['mensaje'];
+        }
+        return $mensaje;
+    }
+    
+    return 'Puede estacionar libremente';
+}
 }

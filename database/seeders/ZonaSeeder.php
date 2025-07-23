@@ -217,13 +217,13 @@ class ZonaSeeder extends Seeder
                     'descripcion' => 'Zona de prueba para desarrollo y testing - Disponible 24/7',
                     'color_mapa' => '#ff6b35',
                     'poligono_coordenadas' => [
-                        // Polígono de tu ubicación actual
+                        // Polígono actualizado con las nuevas coordenadas
                         [
-                            ['lat' => -34.912077462778086, 'lng' => -57.967057133774176],
-                            ['lat' => -34.914896787455525, 'lng' => -57.970130028941966],
-                            ['lat' => -34.9174674786858, 'lng' => -57.96683649094878],
-                            ['lat' => -34.91456631858213, 'lng' => -57.96369961249452],
-                            ['lat' => -34.912077462778086, 'lng' => -57.967057133774176]
+                            ['lat' => -34.889592732606864, 'lng' => -58.01924667103398],
+                            ['lat' => -34.8922776617411, 'lng' => -58.021433626040206],
+                            ['lat' => -34.89470532147908, 'lng' => -58.01804721418459],
+                            ['lat' => -34.8909618432272, 'lng' => -58.01382388242274],
+                            ['lat' => -34.889592732606864, 'lng' => -58.01924667103398]
                         ]
                     ],
                     'es_prohibido_estacionar' => false,

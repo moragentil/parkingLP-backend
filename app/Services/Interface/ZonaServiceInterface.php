@@ -16,4 +16,5 @@ interface ZonaServiceInterface
     public function obtenerTarifasHorarias();
     public function obtenerLeyendaZonas();
     public function obtenerZonasParaMapa();
+    public function obtenerZonaPorCoordenadas($latitud, $longitud);
 }

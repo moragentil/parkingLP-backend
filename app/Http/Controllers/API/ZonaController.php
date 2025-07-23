@@ -212,4 +212,27 @@ class ZonaController extends Controller
         $resultado = $this->zonaService->obtenerZonasParaMapa();
         return response()->json($resultado, $resultado['status_code']);
     }
+
+    public function obtenerZonaPorCoordenadas(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'latitud' => 'required|numeric|between:-90,90',
+        'longitud' => 'required|numeric|between:-180,180'
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Error de validación',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    $resultado = $this->zonaService->obtenerZonaPorCoordenadas(
+        $request->latitud,
+        $request->longitud
+    );
+    
+    return response()->json($resultado, $resultado['status_code']);
+}
 }
