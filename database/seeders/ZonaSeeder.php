@@ -237,6 +237,34 @@ class ZonaSeeder extends Seeder
                     ['dia_semana' => 'viernes', 'hora_inicio' => '07:00:00', 'hora_fin' => '20:00:00'],
                     ['dia_semana' => 'sabado', 'hora_inicio' => '09:00:00', 'hora_fin' => '14:00:00']
                 ]
+            ],
+
+            // ZONA DE PRUEBA 2 - Para testing adicional de la aplicación
+            [
+                'zona' => [
+                    'nombre' => 'Zona de Prueba 2',
+                    'descripcion' => 'Segunda zona de prueba para desarrollo y testing - Zona paga de lunes a viernes',
+                    'color_mapa' => '#8a2be2', // Color violeta
+                    'poligono_coordenadas' => [
+                        // Polígono con las nuevas coordenadas (convertidas de lng,lat a lat,lng)
+                        [
+                            ['lat' => -34.912141610626094, 'lng' => -57.96710502610871],
+                            ['lat' => -34.91495896942417, 'lng' => -57.970122705486204],
+                            ['lat' => -34.917508258028086, 'lng' => -57.96680200435807],
+                            ['lat' => -34.914533243935544, 'lng' => -57.963526810754814],
+                            ['lat' => -34.912141610626094, 'lng' => -57.96710502610871]
+                        ]
+                    ],
+                    'es_prohibido_estacionar' => false,
+                    'activa' => true
+                ],
+                'horarios' => [
+                    ['dia_semana' => 'lunes', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'martes', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'miercoles', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'jueves', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
+                    ['dia_semana' => 'viernes', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00']
+                ]
             ]
         ];
 
