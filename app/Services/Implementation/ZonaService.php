@@ -634,13 +634,22 @@ class ZonaService implements ZonaServiceInterface
         
         // Formatear datos específicamente para la leyenda del mapa
         $leyenda = collect($zonas['zonas'])->map(function ($zona) {
+            // Agrupa los horarios por día igual que en zonas-mapa
+            $horariosPorDia = collect([]);
+            if (isset($zona['horarios']) && is_array($zona['horarios']) && !empty($zona['horarios'])) {
+                $horariosPorDia = collect($zona['horarios'])->groupBy('dia_semana');
+            } elseif (isset($zona['horarios_por_dia']) && !empty($zona['horarios_por_dia'])) {
+                $horariosPorDia = $zona['horarios_por_dia'];
+            }
+
             return [
                 'id' => $zona['id'],
                 'nombre' => $zona['nombre'],
                 'color_mapa' => $zona['color_mapa'],
                 'tipo' => $zona['tipo'],
                 'es_prohibido_estacionar' => $zona['es_prohibido_estacionar'],
-                'horarios_formateados' => $this->formatearHorariosParaLeyenda($zona['horarios_por_dia']),
+                // Devuelve los horarios agrupados por día, igual que en zonas-mapa
+                'horarios_por_dia' => $horariosPorDia,
                 'tarifas_formateadas' => $this->formatearTarifasParaLeyenda($zona['tarifas_disponibles'])
             ];
         });
@@ -668,12 +677,25 @@ class ZonaService implements ZonaServiceInterface
 private function formatearHorariosParaLeyenda($horariosPorDia)
 {
     $horarios = [];
-    
+
     // Convertir a array si es collection
-    if (is_object($horariosPorDia)) {
+    if (is_object($horariosPorDia) && method_exists($horariosPorDia, 'toArray')) {
         $horariosPorDia = $horariosPorDia->toArray();
     }
-    
+
+    // Si las claves son numéricas, convertir a asociativo por dia_semana
+    if (!empty($horariosPorDia) && isset($horariosPorDia[0]) && is_array($horariosPorDia[0]) && isset($horariosPorDia[0]['dia_semana'])) {
+        $horariosPorDiaPorNombre = [];
+        foreach ($horariosPorDia as $item) {
+            $dia = $item['dia_semana'];
+            if (!isset($horariosPorDiaPorNombre[$dia])) {
+                $horariosPorDiaPorNombre[$dia] = [];
+            }
+            $horariosPorDiaPorNombre[$dia][] = $item;
+        }
+        $horariosPorDia = $horariosPorDiaPorNombre;
+    }
+
     if (empty($horariosPorDia)) {
         return ['Sin horarios definidos'];
     }
@@ -684,13 +706,37 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
     
     foreach ($diasSemana as $dia) {
         if (isset($horariosPorDia[$dia]) && !empty($horariosPorDia[$dia])) {
-            $horario = $horariosPorDia[$dia];
+            $horarioData = $horariosPorDia[$dia];
+            
+            // Verificación más robusta
+            $horario = null;
+            
+            if (is_array($horarioData)) {
+                if (count($horarioData) > 0 && isset($horarioData[0])) {
+                    $horario = $horarioData[0];
+                } else {
+                    $horario = null;
+                }
+            } elseif (is_object($horarioData)) {
+                $horario = $horarioData;
+            } else {
+                $horario = null;
+            }
+            
+            if ($horario === null) {
+                continue;
+            }
             
             try {
-                $horaInicio = isset($horario['hora_inicio']) ? $horario['hora_inicio'] : '00:00:00';
-                $horaFin = isset($horario['hora_fin']) ? $horario['hora_fin'] : '23:59:59';
+                if (is_object($horario)) {
+                    $horaInicio = $horario->hora_inicio ?? '00:00:00';
+                    $horaFin = $horario->hora_fin ?? '23:59:59';
+                } else {
+                    $horaInicio = $horario['hora_inicio'] ?? '00:00:00';
+                    $horaFin = $horario['hora_fin'] ?? '23:59:59';
+                }
                 
-                // Limpiar formato si viene con segundos
+                // Limpiar formato
                 if (is_string($horaInicio) && strlen($horaInicio) > 5) {
                     $horaInicio = substr($horaInicio, 0, 5);
                 }
@@ -700,7 +746,8 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
                 
                 $lunesViernes[] = $horaInicio . ' - ' . $horaFin;
             } catch (\Exception $e) {
-                $lunesViernes[] = '00:00 - 23:59';
+                \Log::warning('Error procesando horario para día ' . $dia . ': ' . $e->getMessage());
+                continue;
             }
         }
     }
@@ -708,51 +755,93 @@ private function formatearHorariosParaLeyenda($horariosPorDia)
     if (!empty($lunesViernes)) {
         $horariosUnicos = array_unique($lunesViernes);
         if (count($horariosUnicos) === 1) {
-            $horarios[] = 'Lun-Vie: ' . $horariosUnicos[0];
+            $horarios[] = 'Lun-Vie: ' . reset($horariosUnicos);
         } else {
             $horarios[] = 'Lun-Vie: ' . implode(', ', $horariosUnicos);
         }
     }
     
-    // Sábados
+    // Sábados - con misma verificación robusta
     if (isset($horariosPorDia['sabado']) && !empty($horariosPorDia['sabado'])) {
-        $sabado = $horariosPorDia['sabado'];
-        try {
-            $horaInicio = isset($sabado['hora_inicio']) ? $sabado['hora_inicio'] : '00:00:00';
-            $horaFin = isset($sabado['hora_fin']) ? $sabado['hora_fin'] : '23:59:59';
-            
-            // Limpiar formato
-            if (is_string($horaInicio) && strlen($horaInicio) > 5) {
-                $horaInicio = substr($horaInicio, 0, 5);
+        $horarioData = $horariosPorDia['sabado'];
+        $sabado = null;
+        
+        if (is_array($horarioData)) {
+            if (count($horarioData) > 0 && isset($horarioData[0])) {
+                $sabado = $horarioData[0];
+            } else {
+                $sabado = null;
             }
-            if (is_string($horaFin) && strlen($horaFin) > 5) {
-                $horaFin = substr($horaFin, 0, 5);
+        } elseif (is_object($horarioData)) {
+            $sabado = $horarioData;
+        } else {
+            $sabado = null;
+        }
+        
+        if ($sabado !== null) {
+            try {
+                if (is_object($sabado)) {
+                    $horaInicio = $sabado->hora_inicio ?? '00:00:00';
+                    $horaFin = $sabado->hora_fin ?? '23:59:59';
+                } else {
+                    $horaInicio = $sabado['hora_inicio'] ?? '00:00:00';
+                    $horaFin = $sabado['hora_fin'] ?? '23:59:59';
+                }
+                
+                // Limpiar formato
+                if (is_string($horaInicio) && strlen($horaInicio) > 5) {
+                    $horaInicio = substr($horaInicio, 0, 5);
+                }
+                if (is_string($horaFin) && strlen($horaFin) > 5) {
+                    $horaFin = substr($horaFin, 0, 5);
+                }
+                
+                $horarios[] = 'Sáb: ' . $horaInicio . ' - ' . $horaFin;
+            } catch (\Exception $e) {
+                \Log::warning('Error procesando horario para sábado: ' . $e->getMessage());
             }
-            
-            $horarios[] = 'Sáb: ' . $horaInicio . ' - ' . $horaFin;
-        } catch (\Exception $e) {
-            $horarios[] = 'Sáb: 00:00 - 23:59';
         }
     }
     
-    // Domingos
+    // Domingos - con misma verificación robusta
     if (isset($horariosPorDia['domingo']) && !empty($horariosPorDia['domingo'])) {
-        $domingo = $horariosPorDia['domingo'];
-        try {
-            $horaInicio = isset($domingo['hora_inicio']) ? $domingo['hora_inicio'] : '00:00:00';
-            $horaFin = isset($domingo['hora_fin']) ? $domingo['hora_fin'] : '23:59:59';
-            
-            // Limpiar formato
-            if (is_string($horaInicio) && strlen($horaInicio) > 5) {
-                $horaInicio = substr($horaInicio, 0, 5);
+        $horarioData = $horariosPorDia['domingo'];
+        $domingo = null;
+        
+        if (is_array($horarioData)) {
+            if (count($horarioData) > 0 && isset($horarioData[0])) {
+                $domingo = $horarioData[0];
+            } else {
+                $domingo = null;
             }
-            if (is_string($horaFin) && strlen($horaFin) > 5) {
-                $horaFin = substr($horaFin, 0, 5);
+        } elseif (is_object($horarioData)) {
+            $domingo = $horarioData;
+        } else {
+            $domingo = null;
+        }
+        
+        if ($domingo !== null) {
+            try {
+                if (is_object($domingo)) {
+                    $horaInicio = $domingo->hora_inicio ?? '00:00:00';
+                    $horaFin = $domingo->hora_fin ?? '23:59:59';
+                } else {
+                    $horaInicio = $domingo['hora_inicio'] ?? '00:00:00';
+                    $horaFin = $domingo['hora_fin'] ?? '23:59:59';
+                }
+                
+                // Limpiar formato
+                if (is_string($horaInicio) && strlen($horaInicio) > 5) {
+                    $horaInicio = substr($horaInicio, 0, 5);
+                }
+                if (is_string($horaFin) && strlen($horaFin) > 5) {
+                    $horaFin = substr($horaFin, 0, 5);
+                }
+                
+                $horarios[] = 'Dom: ' . $horaInicio . ' - ' . $horaFin;
+            } catch (\Exception $e) {
+                \Log::warning('Error procesando horario para domingo: ' . $e->getMessage());
             }
-            
-            $horarios[] = 'Dom: ' . $horaInicio . ' - ' . $horaFin;
-        } catch (\Exception $e) {
-            $horarios[] = 'Dom: 00:00 - 23:59';
         }
     }
     
@@ -819,10 +908,24 @@ public function obtenerZonasParaMapa()
 
 private function formatearZonaParaMapa($zona)
 {
+    $ahora = now();
+    $diaActual = strtolower($ahora->locale('es')->dayName);
+    $horaActual = $ahora->format('H:i:s');
+
     // Formatear horarios de manera legible usando la relación horarios
     $horarios = [];
+    $estaActivaAhora = false;
+    
     if ($zona->horarios && $zona->horarios->isNotEmpty()) {
-        $horarios = $this->formatearHorariosParaLeyenda($zona->horarios->groupBy('dia_semana'));
+        // Pasar los horarios agrupados correctamente
+        $horariosPorDia = $zona->horarios->groupBy('dia_semana');
+        $horarios = $this->formatearHorariosParaLeyenda($horariosPorDia);
+        
+        // Verificar si está activa ahora
+        $horarioHoy = $zona->horarios->where('dia_semana', $diaActual)->first();
+        if ($horarioHoy) {
+            $estaActivaAhora = $horarioHoy->estaEnHorario($horaActual);
+        }
     } else {
         $horarios = ['Sin horarios definidos'];
     }
@@ -848,7 +951,8 @@ private function formatearZonaParaMapa($zona)
         'poligonos' => $poligonos,
         'horarios_formateados' => $horarios,
         'centroide' => $this->calcularCentroide($zona->poligono_coordenadas),
-        'activa' => $zona->activa
+        'activa' => $zona->activa,
+        'esta_activa_ahora' => $estaActivaAhora
     ];
 }
 
