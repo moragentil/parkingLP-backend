@@ -247,7 +247,8 @@ class EstacionamientoService implements EstacionamientoServiceInterface
                 return [
                     'status' => false,
                     'message' => 'No hay estacionamiento activo',
-                    'status_code' => 404
+                    'estacionamiento' => null,
+                    'status_code' => 200 // Cambiado de 404 a 200
                 ];
             }
 
