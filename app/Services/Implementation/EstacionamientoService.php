@@ -71,7 +71,12 @@ class EstacionamientoService implements EstacionamientoServiceInterface
             }
 
             // Verificar zona
-            $zona = $this->verificarZona($datos['latitud'], $datos['longitud']);
+            $zona = null;
+            if (!empty($datos['zona_id'])) {
+                $zona = Zona::find($datos['zona_id']);
+            } else {
+                $zona = $this->verificarZona($datos['latitud'], $datos['longitud']);
+            }
             
             // Verificar si es zona prohibida
             if ($zona && $zona->es_prohibido_estacionar) {
