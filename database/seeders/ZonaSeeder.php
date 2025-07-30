@@ -259,11 +259,11 @@ class ZonaSeeder extends Seeder
                     'activa' => true
                 ],
                 'horarios' => [
-                    ['dia_semana' => 'lunes', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
-                    ['dia_semana' => 'martes', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
-                    ['dia_semana' => 'miercoles', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
-                    ['dia_semana' => 'jueves', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00'],
-                    ['dia_semana' => 'viernes', 'hora_inicio' => '08:00:00', 'hora_fin' => '20:00:00']
+                    ['dia_semana' => 'lunes', 'hora_inicio' => '08:00:00', 'hora_fin' => '11:40:00'],
+                    ['dia_semana' => 'martes', 'hora_inicio' => '08:00:00', 'hora_fin' => '11:40:00'],
+                    ['dia_semana' => 'miercoles', 'hora_inicio' => '08:00:00', 'hora_fin' => '11:40:00'],
+                    ['dia_semana' => 'jueves', 'hora_inicio' => '08:00:00', 'hora_fin' => '11:40:00'],
+                    ['dia_semana' => 'viernes', 'hora_inicio' => '08:00:00', 'hora_fin' => '11:40:00']
                 ]
             ]
         ];

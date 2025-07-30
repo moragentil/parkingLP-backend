@@ -75,7 +75,7 @@ class EstacionamientoService implements EstacionamientoServiceInterface
             if (!empty($datos['zona_id'])) {
                 $zona = Zona::find($datos['zona_id']);
             } else {
-                $zona = $this->verificarZona($datos['latitud'], $datos['longitud']);
+                $zona = $this->verificarZona($datos['latitud'], $datos['longituditud']);
             }
             
             // Verificar si es zona prohibida
@@ -176,22 +176,26 @@ class EstacionamientoService implements EstacionamientoServiceInterface
         }
     }
 
-    public function finalizarEstacionamiento($usuarioId, $estacionamientoId)
+    public function finalizarEstacionamiento($usuarioId, $estacionamientoId, $horaFinForzada = null)
     {
         DB::beginTransaction();
         try {
-            $usuario = Usuario::findOrFail($usuarioId);
-            
-            $estacionamiento = Estacionamiento::whereHas('vehiculo', function ($query) use ($usuarioId) {
-                $query->where('usuario_id', $usuarioId);
-            })
-            ->where('estado', 'activo')
-            ->findOrFail($estacionamientoId);
+            $query = Estacionamiento::where('estado', 'activo');
+
+            // Si es una acción del usuario, verificar que le pertenezca
+            if ($usuarioId) {
+                $usuario = Usuario::findOrFail($usuarioId);
+                $query->whereHas('vehiculo', function ($q) use ($usuarioId) {
+                    $q->where('usuario_id', $usuarioId);
+                });
+            }
+
+            $estacionamiento = $query->findOrFail($estacionamientoId);
             
             // Finalizar estacionamiento
             $estacionamiento->update([
                 'fecha_fin' => now()->toDateString(),
-                'hora_fin' => now()->toTimeString(),
+                'hora_fin' => $horaFinForzada ?? now()->toTimeString(),
                 'estado' => 'finalizado'
             ]);
 
@@ -361,6 +365,40 @@ class EstacionamientoService implements EstacionamientoServiceInterface
                 'status_code' => 500
             ];
         }
+    }
+
+    public function finalizarEstacionamientosVencidos()
+    {
+        $ahora = now();
+        $diaActual = strtolower($ahora->locale('es')->dayName);
+        $horaActual = $ahora->format('H:i:00'); // Comparar hasta el minuto
+
+        // Buscar todos los horarios de zona que finalizan en el minuto actual
+        $horariosVencidos = \App\Models\ZonaHorario::where('dia_semana', $diaActual)
+            ->where('hora_fin', $horaActual)
+            ->where('activo', true)
+            ->get();
+
+        $contadorFinalizados = 0;
+
+        foreach ($horariosVencidos as $horario) {
+            $estacionamientosActivos = Estacionamiento::where('zona_id', $horario->zona_id)
+                ->where('estado', 'activo')
+                ->get();
+
+            foreach ($estacionamientosActivos as $estacionamiento) {
+                // Usar el método existente para finalizar, pasando null como usuarioId
+                // ya que es una acción del sistema.
+                $this->finalizarEstacionamiento(null, $estacionamiento->id, $horario->hora_fin);
+                $contadorFinalizados++;
+            }
+        }
+
+        return [
+            'status' => true,
+            'message' => "Se finalizaron {$contadorFinalizados} estacionamientos por vencimiento de zona.",
+            'finalizados' => $contadorFinalizados
+        ];
     }
 
     /**
