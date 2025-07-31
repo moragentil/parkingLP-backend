@@ -53,15 +53,11 @@ class EstacionamientoService implements EstacionamientoServiceInterface
         DB::beginTransaction();
         try {
             $usuario = Usuario::findOrFail($usuarioId);
-            
-            // Verificar que el vehículo pertenezca al usuario
             $vehiculo = $usuario->vehiculos()->findOrFail($datos['vehiculo_id']);
-            
-            // Verificar que no tenga un estacionamiento activo
             $estacionamientoActivo = Estacionamiento::where('vehiculo_id', $vehiculo->id)
                 ->where('estado', 'activo')
                 ->first();
-                
+
             if ($estacionamientoActivo) {
                 return [
                     'status' => false,
@@ -70,15 +66,13 @@ class EstacionamientoService implements EstacionamientoServiceInterface
                 ];
             }
 
-            // Verificar zona
             $zona = null;
             if (!empty($datos['zona_id'])) {
                 $zona = Zona::find($datos['zona_id']);
             } else {
                 $zona = $this->verificarZona($datos['latitud'], $datos['longituditud']);
             }
-            
-            // Verificar si es zona prohibida
+
             if ($zona && $zona->es_prohibido_estacionar) {
                 return [
                     'status' => false,
@@ -88,12 +82,13 @@ class EstacionamientoService implements EstacionamientoServiceInterface
                 ];
             }
 
-            // Crear el estacionamiento
+            // CORRECCIÓN: Usar métodos de formato correctos
+            $now = now();
             $estacionamiento = Estacionamiento::create([
                 'vehiculo_id' => $vehiculo->id,
                 'zona_id' => $zona ? $zona->id : null,
-                'fecha_inicio' => now()->toDateString(),
-                'hora_inicio' => now()->toTimeString(),
+                'fecha_inicio' => $now->format('Y-m-d'), // Solo fecha
+                'hora_inicio' => $now->format('H:i:s'),  // Solo hora
                 'latitud' => $datos['latitud'],
                 'longitud' => $datos['longitud'],
                 'direccion' => $datos['direccion'] ?? null,
@@ -180,6 +175,8 @@ class EstacionamientoService implements EstacionamientoServiceInterface
     {
         DB::beginTransaction();
         try {
+            \Log::info("Finalizar estacionamiento - usuarioId: {$usuarioId}, estacionamientoId: {$estacionamientoId}, horaFinForzada: {$horaFinForzada}");
+
             $query = Estacionamiento::where('estado', 'activo');
 
             // Si es una acción del usuario, verificar que le pertenezca
@@ -191,30 +188,46 @@ class EstacionamientoService implements EstacionamientoServiceInterface
             }
 
             $estacionamiento = $query->findOrFail($estacionamientoId);
-            
+
+            \Log::info("Datos antes de finalizar: fecha_inicio={$estacionamiento->fecha_inicio}, hora_inicio={$estacionamiento->hora_inicio}, zona_id={$estacionamiento->zona_id}");
+
             // Finalizar estacionamiento
+            $fechaFin = now()->format('Y-m-d');
+            $horaFin = $horaFinForzada 
+                ? Carbon::parse($horaFinForzada)->format('H:i:s')
+                : now()->format('H:i:s');
+
+            \Log::info("Actualizando fecha_fin={$fechaFin}, hora_fin={$horaFin}");
+
             $estacionamiento->update([
-                'fecha_fin' => now()->toDateString(),
-                'hora_fin' => $horaFinForzada ?? now()->toTimeString(),
+                'fecha_fin' => $fechaFin, // Solo fecha
+                'hora_fin' => $horaFin,   // Solo hora
                 'estado' => 'finalizado'
             ]);
 
             // Calcular costo si está en zona paga
             $costo = 0;
             if ($estacionamiento->zona && !$estacionamiento->zona->es_prohibido_estacionar) {
+                \Log::info("Calculando costo para estacionamiento ID: {$estacionamiento->id}");
                 $costo = $this->calcularCosto($estacionamiento->id);
+                \Log::info("Costo calculado: {$costo}");
                 $estacionamiento->update(['monto_pagado' => $costo]);
+            } else {
+                \Log::info("No se calcula costo (zona prohibida o sin zona)");
             }
 
             // Desactivar alarma si existe
             if ($estacionamiento->alarma) {
                 $estacionamiento->alarma->update(['activa' => false]);
+                \Log::info("Alarma desactivada para estacionamiento ID: {$estacionamiento->id}");
             }
 
             DB::commit();
-            
+
             $estacionamiento->load(['vehiculo', 'zona', 'alarma']);
-            
+
+            \Log::info("Estacionamiento finalizado correctamente - ID: {$estacionamiento->id}");
+
             return [
                 'status' => true,
                 'message' => 'Estacionamiento finalizado exitosamente',
@@ -224,6 +237,7 @@ class EstacionamientoService implements EstacionamientoServiceInterface
             ];
         } catch (ModelNotFoundException $e) {
             DB::rollBack();
+            \Log::error("Estacionamiento activo no encontrado - ID: {$estacionamientoId}");
             return [
                 'status' => false,
                 'message' => 'Estacionamiento activo no encontrado',
@@ -231,6 +245,7 @@ class EstacionamientoService implements EstacionamientoServiceInterface
             ];
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error("Error al finalizar estacionamiento: " . $e->getMessage());
             return [
                 'status' => false,
                 'message' => 'Error al finalizar estacionamiento',
@@ -304,20 +319,44 @@ class EstacionamientoService implements EstacionamientoServiceInterface
     {
         try {
             $estacionamiento = Estacionamiento::with('zona')->findOrFail($estacionamientoId);
-            
+
+            \Log::info("Calcular costo - Estacionamiento ID: {$estacionamientoId}");
+
             if (!$estacionamiento->zona || $estacionamiento->zona->es_prohibido_estacionar) {
+                \Log::info("Zona no válida o prohibida, costo = 0");
                 return 0;
             }
 
-            $inicio = Carbon::parse($estacionamiento->fecha_inicio . ' ' . $estacionamiento->hora_inicio);
-            $fin = $estacionamiento->fecha_fin && $estacionamiento->hora_fin 
-                ? Carbon::parse($estacionamiento->fecha_fin . ' ' . $estacionamiento->hora_fin)
-                : now();
+            // Extraer solo partes de fecha/hora necesarias
+            $fechaInicio = $estacionamiento->fecha_inicio instanceof \DateTime
+                ? $estacionamiento->fecha_inicio->format('Y-m-d')
+                : substr($estacionamiento->fecha_inicio, 0, 10);
+
+            $horaInicio = $estacionamiento->hora_inicio instanceof \DateTime
+                ? $estacionamiento->hora_inicio->format('H:i:s')
+                : (strlen($estacionamiento->hora_inicio) > 8 ? substr($estacionamiento->hora_inicio, 11, 8) : $estacionamiento->hora_inicio);
+
+            $inicio = Carbon::createFromFormat('Y-m-d H:i:s', "{$fechaInicio} {$horaInicio}");
+
+            // Manejar fecha/hora de fin
+            $fin = now();
+            if ($estacionamiento->fecha_fin && $estacionamiento->hora_fin) {
+                $fechaFin = $estacionamiento->fecha_fin instanceof \DateTime
+                    ? $estacionamiento->fecha_fin->format('Y-m-d')
+                    : substr($estacionamiento->fecha_fin, 0, 10);
+
+                $horaFin = $estacionamiento->hora_fin instanceof \DateTime
+                    ? $estacionamiento->hora_fin->format('H:i:s')
+                    : (strlen($estacionamiento->hora_fin) > 8 ? substr($estacionamiento->hora_fin, 11, 8) : $estacionamiento->hora_fin);
+
+                $fin = Carbon::createFromFormat('Y-m-d H:i:s', "{$fechaFin} {$horaFin}");
+            }
+
+            \Log::info("DEBUG: Inicio: {$inicio}, Fin: {$fin}");
 
             $costoTotal = 0;
             $horaActual = $inicio->copy();
 
-            // Calcular costo hora por hora aplicando tarifas variables
             while ($horaActual->lt($fin)) {
                 $horaFin = $horaActual->copy()->addHour();
                 if ($horaFin->gt($fin)) {
@@ -327,13 +366,18 @@ class EstacionamientoService implements EstacionamientoServiceInterface
                 $tarifa = $estacionamiento->zona->obtenerTarifaEnHora($horaActual->format('H:i:s'));
                 $minutos = $horaActual->diffInMinutes($horaFin);
                 $costoHora = ($tarifa * $minutos) / 60;
-                
+
+                \Log::info("Iteración: horaActual={$horaActual}, horaFin={$horaFin}, tarifa={$tarifa}, minutos={$minutos}, costoHora={$costoHora}");
+
                 $costoTotal += $costoHora;
                 $horaActual = $horaFin;
             }
 
+            \Log::info("Costo total calculado: {$costoTotal}");
+
             return round($costoTotal, 2);
         } catch (\Exception $e) {
+            \Log::error("Error al calcular costo: " . $e->getMessage());
             return 0;
         }
     }

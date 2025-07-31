@@ -35,6 +35,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/estacionamientos/{id}/finalizar', [EstacionamientoController::class, 'finalizar']);
     Route::post('/verificar-zona', [EstacionamientoController::class, 'verificarZona']);
     Route::get('/estacionamiento-activo', [EstacionamientoController::class, 'estacionamientoActivo']);
+    Route::get('/estacionamientos/{id}/costo', [EstacionamientoController::class, 'calcularCosto']);
     
     // Zonas
     Route::apiResource('zonas', ZonaController::class);

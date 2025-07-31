@@ -129,4 +129,13 @@ class EstacionamientoController extends Controller
         $resultado = $this->estacionamientoService->obtenerEstacionamientoActivo($request->user()->id);
         return response()->json($resultado, $resultado['status_code']);
     }
+
+    public function calcularCosto(Request $request, $id)
+    {
+        $resultado = $this->estacionamientoService->calcularCosto($id);
+        return response()->json([
+            'status' => true,
+            'costo' => $resultado
+        ]);
+    }
 }
