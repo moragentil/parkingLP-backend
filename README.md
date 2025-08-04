@@ -1,3 +1,5 @@
+> **Importante:** La rama principal para utilizar y entregar el proyecto es la rama `mora`, ya que contiene la versión final y actualizada del backend.
+
 # ParkingLP Backend
 
 Backend para la gestión de zonas de estacionamiento, vehículos, usuarios y alarmas para la app ParkingLP.
