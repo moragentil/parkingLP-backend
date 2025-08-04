@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             TarifaHorarioSeeder::class,
             ZonaSeeder::class,
+            UsuarioSeeder::class,
             // Otros seeders...
         ]);
     }
