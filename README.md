@@ -1,61 +1,116 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+> **Importante:** La rama principal para utilizar y entregar el proyecto es la rama `mora`, ya que contiene la versión final y actualizada del backend.
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+# ParkingLP Backend
 
-## About Laravel
+Backend para la gestión de zonas de estacionamiento, vehículos, usuarios y alarmas para la app ParkingLP.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Tecnologías utilizadas
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **Framework:** Laravel 12.x
+- **Lenguaje:** PHP 8.2+
+- **Base de datos:** MySQL (configurable a SQLite/PostgreSQL)
+- **ORM:** Eloquent
+- **Autenticación:** Laravel Sanctum
+- **Colas:** Laravel Queue (configurable)
+- **Tareas programadas:** Laravel Scheduler
+- **Logs:** Monolog (storage/logs/laravel.log)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Estructura principal
 
-## Learning Laravel
+- `app/` - Código fuente principal (Controllers, Models, Services)
+- `routes/` - Rutas de la API (`api.php`)
+- `database/` - Migraciones y seeders
+- `config/` - Configuración de la app y servicios
+- `public/` - Punto de entrada HTTP
+- `.env` - Variables de entorno
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Instalación y configuración
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+1. **Clonar el repositorio**
+   ```sh
+   git clone https://github.com/moragentil/parkingLP-backend
+   cd parkingLP-backend
+   ```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+2. **Instalar dependencias**
+   ```sh
+   composer install
+   ```
 
-## Laravel Sponsors
+3. **Configurar variables de entorno**
+   - Copia `.env.example` a `.env` y ajusta según tu entorno.
+   - Configura la conexión MySQL en `.env`:
+     ```
+     DB_CONNECTION=mysql
+     DB_HOST=127.0.0.1
+     DB_PORT=3306
+     DB_DATABASE=parkinglp
+     DB_USERNAME=tu_usuario
+     DB_PASSWORD=tu_contraseña
+     ```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+4. **Generar clave de la aplicación**
+   ```sh
+   php artisan key:generate
+   ```
 
-### Premium Partners
+5. **Migrar y seedear la base de datos**
+   ```sh
+   php artisan migrate --seed
+   ```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+6. **Levantar el servidor**
+   ```sh
+   php artisan serve
+   ```
 
-## Contributing
+7. **Configurar tareas programadas (scheduler)**
+    - Esto es para poder gestionar el corte de los estacionamientos en el horario de finalización de las zonas:
+   - Para producción, agrega al cron del sistema:
+     ```
+     * * * * * cd /ruta/a/parkingLP-backend && php artisan schedule:run >> /dev/null 2>&1
+     ```
+   - En desarrollo, puedes ejecutar manualmente:
+     ```
+     php artisan schedule:run
+     ```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+8. **Seeder de usuario de prueba**
+   ```sh
+   php artisan db:seed --class=UsuarioSeeder
+   ```
+   Esto creará el usuario:
+   - **Email:** prueba@parkinglp.com
+   - **Contraseña:** password123
 
-## Code of Conduct
+> Si necesitas otro usuario, puedes registrarlo vía la API `/api/register`.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Endpoints principales
 
-## Security Vulnerabilities
+- **Autenticación:** `/api/login`, `/api/register`, `/api/logout`, `/api/me`
+- **Usuarios:** `/api/usuarios`
+- **Vehículos:** `/api/vehiculos`
+- **Estacionamientos:** `/api/estacionamientos`
+- **Zonas:** `/api/zonas`, `/api/zonas-leyenda`, `/api/zonas-mapa`
+- **Alarmas:** `/api/alarmas`
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+> Todas las rutas protegidas requieren autenticación con token Bearer (Sanctum).
 
-## License
+## Configuración de base de datos
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- Por defecto, se usa MySQL. Puedes cambiar a SQLite/PostgreSQL editando `.env` y `config/database.php`.
+- Crea la base de datos `parkinglp` en tu servidor MySQL antes de ejecutar las migraciones.
+
+## Notas importantes
+
+- El backend incluye lógica para finalizar automáticamente estacionamientos según el horario de la zona (ver Scheduler).
+- Las alarmas se programan automáticamente para avisar antes del vencimiento del estacionamiento.
+- El sistema soporta tarifas variables por zona y horario.
+
+## Contacto y soporte
+
+Para dudas o soporte, contacta a moragentil@gmail.com.
+
+---
+
+**Entrega:** Este repositorio contiene todo lo necesario para ejecutar el backend del proyecto ParkingLP, incluyendo migraciones, seeders, configuración y documentación.
